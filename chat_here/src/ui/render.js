@@ -63,7 +63,10 @@ function createSessionItem(session, currentId) {
       <div class="session-name">${session.name}</div>
       <div class="session-desc">${session.lastMessage || "暂无消息"}</div>
     </div>
-    <div class="session-time">${formatTime(session.lastTime)}</div>
+    <div class="session-meta">
+      <span class="session-time">${formatTime(session.lastTime)}</span>
+      <button class="session-delete" title="删除">×</button>
+    </div>
   `;
 
   return item;

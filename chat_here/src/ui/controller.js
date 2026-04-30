@@ -48,6 +48,7 @@ function initElements() {
     showConfig: document.getElementById("show-config"),
     detailClose: document.getElementById("detail-close"),
     configClose: document.getElementById("config-close"),
+    dissolveBtn: document.getElementById("dissolve-btn"),
     modalOverlay: document.getElementById("modal-overlay"),
     modalClose: document.getElementById("modal-close"),
     createCancel: document.getElementById("create-cancel"),
@@ -66,6 +67,13 @@ function initElements() {
   renderModelOptions(elements.copilotModelInput, COPILOT_MODELS, DEFAULT_COPILOT_MODEL);
 
   elements.sessionList.addEventListener("click", (e) => {
+    const deleteBtn = e.target.closest(".session-delete");
+    if (deleteBtn) {
+      const item = deleteBtn.closest(".session-item");
+      if (item) deleteSession(item.dataset.id);
+      return;
+    }
+    
     const item = e.target.closest(".session-item");
     if (!item) return;
     switchSession(item.dataset.id);
@@ -105,6 +113,12 @@ function initElements() {
     elements.configPanel.classList.remove("show");
   });
 
+  elements.dissolveBtn.addEventListener("click", () => {
+    if (currentSession) {
+      deleteSession(currentSession);
+    }
+  });
+
   elements.codexAuthBtn.addEventListener("click", () => startAuth(AuthAgent.CODEX));
   elements.copilotAuthBtn.addEventListener("click", () => startAuth(AuthAgent.COPILOT));
 
@@ -119,6 +133,23 @@ function initElements() {
 
 function closeModal() {
   document.getElementById("modal-overlay").classList.add("hidden");
+}
+
+function deleteSession(sessionId) {
+  sessions = sessions.filter(s => s.id !== sessionId);
+  
+  if (currentSession === sessionId) {
+    currentSession = null;
+    renderEmptyState({
+      headerTitle: document.getElementById("header-title"),
+      headerCount: document.getElementById("header-count"),
+      chatMessages: document.getElementById("chat-messages"),
+      memberList: document.getElementById("member-list"),
+      detailPanel: document.getElementById("detail-panel"),
+    });
+  }
+  
+  renderSessionList(sessions, currentSession);
 }
 
 function renderEmptyState(elements) {
@@ -152,11 +183,14 @@ function renderEmptyState(elements) {
   
   elements.memberList.querySelectorAll(".member-item").forEach(item => {
     item.addEventListener("click", () => {
-      const agentId = item.dataset.id;
-      createPrivateChat(agentId);
+      createPrivateChat(item.dataset.id);
     });
   });
 
+  const dissolveBtn = document.getElementById("dissolve-btn");
+  if (dissolveBtn) dissolveBtn.style.display = "none";
+
+  elements.detailPanel.classList.add("hidden");
   renderSessionList(sessions, currentSession);
 }
 
@@ -229,12 +263,16 @@ function switchSession(sessionId) {
     chatMessages: document.getElementById("chat-messages"),
     memberList: document.getElementById("member-list"),
     detailPanel: document.getElementById("detail-panel"),
+    dissolveBtn: document.getElementById("dissolve-btn"),
   };
 
   elements.headerTitle.textContent = session.name;
   elements.headerCount.textContent = session.type === "group" 
     ? `${session.agents.length + 1}人` 
     : "私聊";
+
+  elements.dissolveBtn.textContent = session.type === "group" ? "解散群聊" : "删除私聊";
+  elements.dissolveBtn.style.display = "block";
 
   renderSessionList(sessions, currentSession);
   
@@ -253,7 +291,7 @@ function switchSession(sessionId) {
         <div class="message-content">
           <div class="message-author">Gateway</div>
           <div class="message-text">${session.type === "private" 
-            ? `开始与 ${session.name} 私聊，发送消息开始对话` 
+            ? `开始与 ${session.name} 私聊` 
             : "群聊已创建，发送话题开始讨论"}</div>
         </div>
       </div>
