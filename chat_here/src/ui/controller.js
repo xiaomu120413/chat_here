@@ -49,6 +49,8 @@ function initElements() {
     detailClose: document.getElementById("detail-close"),
     configClose: document.getElementById("config-close"),
     dissolveBtn: document.getElementById("dissolve-btn"),
+    sessionInfoSection: document.getElementById("session-info-section"),
+    sessionInfoBox: document.getElementById("session-info-box"),
     modalOverlay: document.getElementById("modal-overlay"),
     modalClose: document.getElementById("modal-close"),
     createCancel: document.getElementById("create-cancel"),
@@ -77,6 +79,13 @@ function initElements() {
     const item = e.target.closest(".session-item");
     if (!item) return;
     switchSession(item.dataset.id);
+  });
+
+  elements.memberList.addEventListener("click", (e) => {
+    const item = e.target.closest(".member-item");
+    if (!item) return;
+    const agentId = item.dataset.id;
+    if (agentId) createPrivateChat(agentId);
   });
 
   elements.sendBtn.addEventListener("click", () => sendMessage(elements));
@@ -128,13 +137,6 @@ function initElements() {
     loadHistoryRun(item.dataset.id);
   });
 
-  elements.memberList.addEventListener("click", (e) => {
-    const item = e.target.closest(".member-item");
-    if (!item) return;
-    const agentId = item.dataset.id;
-    if (agentId) createPrivateChat(agentId);
-  });
-
   renderEmptyState(elements);
 }
 
@@ -172,8 +174,8 @@ function renderEmptyState(elements) {
     </div>
   `;
 
-  const dissolveBtn = document.getElementById("dissolve-btn");
-  if (dissolveBtn) dissolveBtn.style.display = "none";
+  elements.sessionInfoSection.style.display = "none";
+  elements.dissolveBtn.style.display = "none";
 
   elements.detailPanel.classList.remove("hidden");
   renderSessionList(sessions, currentSession);
@@ -246,8 +248,8 @@ function switchSession(sessionId) {
     headerTitle: document.getElementById("header-title"),
     headerCount: document.getElementById("header-count"),
     chatMessages: document.getElementById("chat-messages"),
-    memberList: document.getElementById("member-list"),
-    detailPanel: document.getElementById("detail-panel"),
+    sessionInfoSection: document.getElementById("session-info-section"),
+    sessionInfoBox: document.getElementById("session-info-box"),
     dissolveBtn: document.getElementById("dissolve-btn"),
   };
 
@@ -258,15 +260,30 @@ function switchSession(sessionId) {
 
   elements.dissolveBtn.textContent = session.type === "group" ? "解散群聊" : "删除私聊";
   elements.dissolveBtn.style.display = "block";
+  elements.sessionInfoSection.style.display = "block";
 
-  renderSessionList(sessions, currentSession);
-  
   if (session.type === "private") {
-    renderMemberListPrivate(session.agent);
+    const agent = AGENTS[session.agent];
+    elements.sessionInfoBox.innerHTML = `
+      <div class="session-member">
+        <div class="member-avatar me">M</div>
+        <span class="member-name">Me</span>
+      </div>
+      <div class="session-member">
+        <div class="member-avatar ${session.agent}">${session.agent.charAt(0).toUpperCase()}</div>
+        <span class="member-name">${agent.name}</span>
+      </div>
+    `;
   } else {
-    renderMemberListGroup(session.agents);
+    let html = `<div class="session-member"><div class="member-avatar me">M</div><span class="member-name">Me</span></div>`;
+    session.agents.forEach(agentId => {
+      const agent = AGENTS[agentId];
+      html += `<div class="session-member"><div class="member-avatar ${agentId}">${agentId.charAt(0).toUpperCase()}</div><span class="member-name">${agent.name}</span></div>`;
+    });
+    elements.sessionInfoBox.innerHTML = html;
   }
 
+  renderSessionList(sessions, currentSession);
   renderMessages(session.messages || []);
   
   if (!session.messages || session.messages.length === 0) {
@@ -282,59 +299,6 @@ function switchSession(sessionId) {
       </div>
     `;
   }
-
-  elements.detailPanel.classList.remove("hidden");
-}
-
-function renderMemberListPrivate(agentId) {
-  const container = document.getElementById("member-list");
-  const agent = AGENTS[agentId];
-  
-  container.innerHTML = `
-    <div class="member-item">
-      <div class="member-avatar me">M</div>
-      <div class="member-info">
-        <div class="member-name">Me</div>
-        <div class="member-role">用户</div>
-      </div>
-    </div>
-    <div class="member-item">
-      <div class="member-avatar ${agentId}">${agentId.charAt(0).toUpperCase()}</div>
-      <div class="member-info">
-        <div class="member-name">${agent.name}</div>
-        <div class="member-role">${agent.role}</div>
-      </div>
-    </div>
-  `;
-}
-
-function renderMemberListGroup(agents) {
-  const container = document.getElementById("member-list");
-  
-  let html = `
-    <div class="member-item">
-      <div class="member-avatar me">M</div>
-      <div class="member-info">
-        <div class="member-name">Me</div>
-        <div class="member-role">用户</div>
-      </div>
-    </div>
-  `;
-  
-  agents.forEach(agentId => {
-    const agent = AGENTS[agentId];
-    html += `
-      <div class="member-item">
-        <div class="member-avatar ${agentId}">${agentId.charAt(0).toUpperCase()}</div>
-        <div class="member-info">
-          <div class="member-name">${agent.name}</div>
-          <div class="member-role">${agent.role}</div>
-        </div>
-      </div>
-    `;
-  });
-  
-  container.innerHTML = html;
 }
 
 async function sendMessage(elements) {
