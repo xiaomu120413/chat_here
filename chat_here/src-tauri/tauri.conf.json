@@ -14,8 +14,8 @@
       {
         "label": "main",
         "title": "Chat Here",
-        "width": 960,
-        "height": 720,
+        "width": 1200,
+        "height": 800,
         "resizable": true
       }
     ],

@@ -3,190 +3,216 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Agent Group Chat</title>
+    <title>Chat Here</title>
     <link rel="stylesheet" href="./src/styles.css" />
   </head>
   <body>
-    <main class="app-shell">
-      <section class="workspace-grid">
-        <article class="chat-card">
-          <div class="group-header">
-            <div class="group-main">
-              <div class="group-avatar-stack" aria-hidden="true">
-                <span class="group-avatar me">Me</span>
-                <span class="group-avatar codex">C</span>
-                <span class="group-avatar copilot">P</span>
+    <main class="im-app">
+      <aside class="sidebar">
+        <header class="sidebar-header">
+          <div class="app-logo">
+            <span class="logo-icon">💬</span>
+            <span class="logo-text">Chat Here</span>
+          </div>
+        </header>
+        
+        <section class="session-list-section">
+          <div class="section-header">
+            <span class="section-title">群组</span>
+            <span class="section-badge">1</span>
+          </div>
+          <div class="session-list">
+            <div class="session-item active" data-session="arch-group">
+              <div class="session-avatar-group">
+                <span class="avatar me">M</span>
+                <span class="avatar codex">C</span>
+                <span class="avatar copilot">P</span>
               </div>
-              <div>
-                <p class="eyebrow">Gateway Group</p>
-                <h1 class="group-title">Architecture Discussion Group</h1>
-                <p class="group-subtitle">
-                  Me, Codex, Copilot and Gateway are in one room. Gateway only coordinates the
-                  turns and writes the final summary.
-                </p>
+              <div class="session-info">
+                <div class="session-name">架构讨论组</div>
+                <div class="session-preview">Gateway: 群组已创建，发送话题开始讨论</div>
               </div>
-            </div>
-            <div class="chat-state-row">
-              <span class="card-state" id="codex-state">Codex Idle</span>
-              <span class="card-state" id="copilot-state">Copilot Idle</span>
-              <span class="round-badge" id="round-badge">Round 0</span>
+              <div class="session-meta">
+                <span class="session-time">刚刚</span>
+                <span class="unread-badge hidden">0</span>
+              </div>
             </div>
           </div>
-
-          <div class="group-members">
-            <div class="member-pill">
-              <span class="member-dot me"></span>
-              <strong>Me</strong>
-              <span>User</span>
-            </div>
-            <div class="member-pill">
-              <span class="member-dot codex"></span>
-              <strong>Codex</strong>
-              <span>Primary builder</span>
-            </div>
-            <div class="member-pill">
-              <span class="member-dot copilot"></span>
-              <strong>Copilot</strong>
-              <span>Counterpoint reviewer</span>
-            </div>
-            <div class="member-pill">
-              <span class="member-dot system"></span>
-              <strong>Gateway</strong>
-              <span>Turn manager</span>
-            </div>
+        </section>
+        
+        <section class="session-list-section">
+          <div class="section-header">
+            <span class="section-title">私聊</span>
+            <span class="section-badge">2</span>
           </div>
-
-          <div id="chat-panel" class="chat-panel">
-            <div class="chat-bubble system">
-              <div class="chat-meta">
-                <strong>Gateway</strong>
-                <span>Idle</span>
+          <div class="session-list">
+            <div class="session-item" data-session="codex">
+              <div class="session-avatar codex">C</div>
+              <div class="session-info">
+                <div class="session-name">Codex</div>
+                <div class="session-preview">Primary builder</div>
               </div>
-              <p>Group created. Send a topic to start the discussion.</p>
+              <div class="session-meta">
+                <span class="session-time">12:30</span>
+              </div>
+            </div>
+            <div class="session-item" data-session="copilot">
+              <div class="session-avatar copilot">P</div>
+              <div class="session-info">
+                <div class="session-name">Copilot</div>
+                <div class="session-preview">Counterpoint reviewer</div>
+              </div>
+              <div class="session-meta">
+                <span class="session-time">12:25</span>
+              </div>
             </div>
           </div>
+        </section>
+      </aside>
 
-          <section class="composer-card">
-            <form id="task-form" class="task-form">
-              <label class="section-label" for="task-input">New Group Topic</label>
+      <section class="chat-main">
+        <header class="chat-header">
+          <div class="chat-header-info">
+            <div class="chat-avatar-group">
+              <span class="avatar me">M</span>
+              <span class="avatar codex">C</span>
+              <span class="avatar copilot">P</span>
+            </div>
+            <div class="chat-title-area">
+              <h1 class="chat-title">架构讨论组</h1>
+              <span class="chat-members">Me, Codex, Copilot, Gateway</span>
+            </div>
+          </div>
+          <div class="chat-header-status">
+            <span class="status-badge" id="codex-state">Codex Idle</span>
+            <span class="status-badge" id="copilot-state">Copilot Idle</span>
+            <span class="round-badge" id="round-badge">Round 0</span>
+          </div>
+        </header>
+
+        <div id="chat-panel" class="chat-panel">
+          <div class="chat-bubble system">
+            <div class="bubble-avatar gateway">G</div>
+            <div class="bubble-content">
+              <div class="bubble-header">
+                <span class="bubble-author">Gateway</span>
+                <span class="bubble-time">刚刚</span>
+              </div>
+              <div class="bubble-text">群组已创建，发送话题开始讨论</div>
+            </div>
+          </div>
+        </div>
+
+        <footer class="chat-footer">
+          <form id="task-form" class="input-area">
+            <div class="input-row">
               <textarea
                 id="task-input"
                 name="task"
-                rows="4"
-                placeholder="Example: 我想让大家讨论一下这个网关到底应该先做状态机，还是先做真实 provider 接入。"
+                rows="1"
+                placeholder="输入话题开始讨论..."
               ></textarea>
-
-              <div class="provider-grid" aria-label="Provider settings">
-                <label class="field-control" for="model-input">
-                  <span class="section-label">Codex Model</span>
-                  <select id="model-input" name="model"></select>
-                </label>
-
-                <label class="field-control" for="copilot-model-input">
-                  <span class="section-label">Copilot Model</span>
-                  <select id="copilot-model-input" name="copilot-model"></select>
-                </label>
-
-                <label class="field-control" for="round-input">
-                  <span class="section-label">Max Rounds</span>
-                  <input id="round-input" name="rounds" type="number" min="1" max="5" value="1" />
-                </label>
+              <button id="send-button" type="submit">发送</button>
+            </div>
+            
+            <div class="config-row">
+              <div class="config-group">
+                <label for="model-input">Codex Model</label>
+                <select id="model-input" name="model"></select>
               </div>
-
-              <div class="composer-meta-row">
-                <p id="provider-health" class="provider-health is-pending">Checking auth</p>
-                <p id="status" class="status-text">Idle</p>
+              <div class="config-group">
+                <label for="copilot-model-input">Copilot Model</label>
+                <select id="copilot-model-input" name="copilot-model"></select>
               </div>
-
-              <div class="auth-row">
-                <button id="codex-auth-button" class="secondary-button" type="button">Codex Login</button>
-                <button id="copilot-auth-button" class="secondary-button" type="button">Copilot Login</button>
-                <button id="run-button" type="submit">Send To Group</button>
+              <div class="config-group">
+                <label for="round-input">轮次</label>
+                <input id="round-input" name="rounds" type="number" min="1" max="5" value="1" />
               </div>
-            </form>
-          </section>
-        </article>
-
-        <div class="sidebar-stack">
-          <article class="summary-card">
-            <div class="card-head">
-              <div>
-                <p class="agent-tag orchestrator-tag">Group Info</p>
-                <h2>Session Snapshot</h2>
+              <div class="auth-buttons">
+                <button id="codex-auth-button" class="auth-btn" type="button">Codex 登录</button>
+                <button id="copilot-auth-button" class="auth-btn" type="button">Copilot 登录</button>
               </div>
             </div>
-            <div class="group-info-grid">
-              <div class="info-tile">
-                <span class="chip-label">Mode</span>
-                <strong>Group Discussion</strong>
-              </div>
-              <div class="info-tile">
-                <span class="chip-label">Store</span>
-                <strong>Local History</strong>
-              </div>
+            
+            <div class="status-row">
+              <span id="provider-health" class="health-badge is-pending">检查认证</span>
+              <span id="status" class="status-text">Idle</span>
             </div>
-          </article>
-
-          <article class="summary-card">
-            <div class="card-head">
-              <div>
-                <p class="agent-tag orchestrator-tag">Orchestrator</p>
-                <h2>Run Summary</h2>
-              </div>
-            </div>
-            <p id="summary-text" class="summary-text">
-              Gateway state and final decision will appear here after a run.
-            </p>
-
-            <div class="timeline">
-              <div class="timeline-item" id="timeline-dispatch">
-                <span class="timeline-dot"></span>
-                <div>
-                  <strong>Dispatch</strong>
-                  <p>Waiting</p>
-                </div>
-              </div>
-              <div class="timeline-item" id="timeline-review">
-                <span class="timeline-dot"></span>
-                <div>
-                  <strong>Group Chat</strong>
-                  <p>Waiting</p>
-                </div>
-              </div>
-              <div class="timeline-item" id="timeline-decision">
-                <span class="timeline-dot"></span>
-                <div>
-                  <strong>Decision</strong>
-                  <p>Waiting</p>
-                </div>
-              </div>
-            </div>
-
-            <div class="event-log-shell">
-              <div class="event-log-head">
-                <p class="agent-tag orchestrator-tag">Events</p>
-                <span class="history-meta">Gateway lifecycle</span>
-              </div>
-              <div id="event-log" class="event-log">
-                <p class="history-empty">No events yet.</p>
-              </div>
-            </div>
-          </article>
-
-          <section class="history-band">
-            <div class="history-head">
-              <div>
-                <p class="agent-tag orchestrator-tag">History</p>
-                <h2>Recent Runs</h2>
-              </div>
-              <span class="card-state" id="history-count">0 saved</span>
-            </div>
-            <div id="history-list" class="history-list">
-              <p class="history-empty">No saved runs yet.</p>
-            </div>
-          </section>
-        </div>
+          </form>
+        </footer>
       </section>
+
+      <aside class="info-panel">
+        <section class="info-section">
+          <h2>群组信息</h2>
+          <div class="member-list">
+            <div class="member-item">
+              <div class="member-avatar me">M</div>
+              <div class="member-info">
+                <span class="member-name">Me</span>
+                <span class="member-role">用户</span>
+              </div>
+            </div>
+            <div class="member-item">
+              <div class="member-avatar codex">C</div>
+              <div class="member-info">
+                <span class="member-name">Codex</span>
+                <span class="member-role">Primary builder</span>
+              </div>
+            </div>
+            <div class="member-item">
+              <div class="member-avatar copilot">P</div>
+              <div class="member-info">
+                <span class="member-name">Copilot</span>
+                <span class="member-role">Counterpoint reviewer</span>
+              </div>
+            </div>
+            <div class="member-item">
+              <div class="member-avatar gateway">G</div>
+              <div class="member-info">
+                <span class="member-name">Gateway</span>
+                <span class="member-role">Turn manager</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="info-section">
+          <h2>运行摘要</h2>
+          <p id="summary-text" class="summary-text">Gateway 状态和最终决策将在运行后显示</p>
+          
+          <div class="timeline">
+            <div class="timeline-item" id="timeline-dispatch">
+              <span class="timeline-dot"></span>
+              <div class="timeline-content">
+                <span class="timeline-title">Dispatch</span>
+                <span class="timeline-status">Waiting</span>
+              </div>
+            </div>
+            <div class="timeline-item" id="timeline-review">
+              <span class="timeline-dot"></span>
+              <div class="timeline-content">
+                <span class="timeline-title">Group Chat</span>
+                <span class="timeline-status">Waiting</span>
+              </div>
+            </div>
+            <div class="timeline-item" id="timeline-decision">
+              <span class="timeline-dot"></span>
+              <div class="timeline-content">
+                <span class="timeline-title">Decision</span>
+                <span class="timeline-status">Waiting</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="info-section">
+          <h2>历史记录</h2>
+          <div id="history-list" class="history-list">
+            <p class="history-empty">暂无历史记录</p>
+          </div>
+        </section>
+      </aside>
     </main>
 
     <script type="module" src="./src/main.js"></script>

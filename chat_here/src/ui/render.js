@@ -3,18 +3,17 @@ import { AgentId, MessageKind, RunStatus, StepType } from "../gateway/schema/ind
 export function renderEmpty(elements) {
   elements.statusText.textContent = "Idle";
   elements.roundBadge.textContent = "Round 0";
-  elements.summaryText.textContent = "Gateway state and final decision will appear here after a run.";
+  elements.summaryText.textContent = "Gateway 状态和最终决策将在运行后显示";
   elements.codexState.textContent = "Codex Idle";
   elements.copilotState.textContent = "Copilot Idle";
   renderConversation(elements, []);
-  renderEventLog(elements, []);
   setTimeline(elements, "idle");
 }
 
 export function renderLoading(elements, prompt) {
-  elements.statusText.textContent = "Starting discussion";
+  elements.statusText.textContent = "开始讨论";
   elements.roundBadge.textContent = "Round 1";
-  elements.summaryText.textContent = `Task accepted: ${prompt}`;
+  elements.summaryText.textContent = `话题已接受: ${prompt}`;
   elements.codexState.textContent = "Codex Thinking";
   elements.copilotState.textContent = "Copilot Waiting";
   renderConversation(elements, [
@@ -23,9 +22,9 @@ export function renderLoading(elements, prompt) {
       kind: MessageKind.TASK,
       round: 1,
       content: prompt,
+      createdAt: Date.now(),
     },
   ]);
-  renderEventLog(elements, []);
   setTimeline(elements, "running");
 }
 
@@ -33,14 +32,14 @@ export function renderRun(elements, result) {
   const { run, messages, decision, error } = result;
   const isFailed = run.status === RunStatus.FAILED;
   const isCompleted = run.status === RunStatus.COMPLETED;
-  const errorMessage = getErrorMessage(error, run.error ?? "No decision available.");
+  const errorMessage = getErrorMessage(error, run.error ?? "无决策结果");
 
   if (isFailed) {
-    elements.statusText.textContent = `Failed: ${errorMessage}`;
+    elements.statusText.textContent = `失败: ${errorMessage}`;
   } else if (isCompleted) {
-    elements.statusText.textContent = `Completed: ${run.status}`;
+    elements.statusText.textContent = `完成: ${run.status}`;
   } else {
-    elements.statusText.textContent = `Running: ${formatRunStatus(run.status)}`;
+    elements.statusText.textContent = `运行: ${formatRunStatus(run.status)}`;
   }
 
   elements.roundBadge.textContent = `Round ${run.round}`;
@@ -50,53 +49,49 @@ export function renderRun(elements, result) {
 
   applyAgentStates(elements, run, isFailed);
   renderConversation(elements, messages);
-  renderEventLog(elements, result.events ?? []);
-
   setTimeline(elements, isFailed ? "failed" : isCompleted ? "completed" : "running");
 }
 
 export function renderHistory(elements, snapshots) {
-  elements.historyCount.textContent = `${snapshots.length} saved`;
   elements.historyList.innerHTML = "";
 
   if (snapshots.length === 0) {
     const empty = document.createElement("p");
     empty.className = "history-empty";
-    empty.textContent = "No saved runs yet.";
+    empty.textContent = "暂无历史记录";
     elements.historyList.appendChild(empty);
     return;
   }
 
   for (const snapshot of snapshots) {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "history-item";
-    button.dataset.runId = snapshot.run.id;
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "history-item";
+    item.dataset.runId = snapshot.run.id;
 
     const title = document.createElement("span");
-    title.className = "history-title";
+    title.className = "history-item-title";
     title.textContent = snapshot.task?.title ?? snapshot.task?.prompt ?? snapshot.run.id;
 
     const meta = document.createElement("span");
-    meta.className = "history-meta";
-    meta.textContent = `${snapshot.run.status} / ${new Date(snapshot.run.startedAt).toLocaleString()}`;
+    meta.className = "history-item-meta";
+    meta.textContent = `${snapshot.run.status} / ${formatTime(snapshot.run.startedAt)}`;
 
-    button.append(title, meta);
-    elements.historyList.appendChild(button);
+    item.append(title, meta);
+    elements.historyList.appendChild(item);
   }
 }
 
 export function renderError(elements, error) {
-  elements.statusText.textContent = "Failed";
+  elements.statusText.textContent = "失败";
   elements.summaryText.textContent = getErrorMessage(error);
   elements.codexState.textContent = "Codex Error";
   elements.copilotState.textContent = "Copilot Error";
   renderConversation(elements, []);
-  renderEventLog(elements, []);
   setTimeline(elements, "failed");
 }
 
-export function getErrorMessage(error, fallback = "Unknown error") {
+export function getErrorMessage(error, fallback = "未知错误") {
   if (error instanceof Error && error.message) {
     return error.message;
   }
@@ -108,34 +103,6 @@ export function getErrorMessage(error, fallback = "Unknown error") {
   return fallback ?? String(error);
 }
 
-function renderEventLog(elements, events) {
-  elements.eventLog.innerHTML = "";
-
-  if (events.length === 0) {
-    const empty = document.createElement("p");
-    empty.className = "history-empty";
-    empty.textContent = "No events yet.";
-    elements.eventLog.appendChild(empty);
-    return;
-  }
-
-  for (const event of events) {
-    const item = document.createElement("div");
-    item.className = "event-log-item";
-
-    const type = document.createElement("strong");
-    type.textContent = event.type;
-
-    const meta = document.createElement("span");
-    meta.textContent = event.createdAt
-      ? `${event.payload?.messageId ?? event.payload?.decisionId ?? event.runId} / ${new Date(event.createdAt).toLocaleTimeString()}`
-      : event.payload?.messageId ?? event.payload?.decisionId ?? event.runId;
-
-    item.append(type, meta);
-    elements.eventLog.appendChild(item);
-  }
-}
-
 function renderConversation(elements, messages) {
   elements.chatPanel.innerHTML = "";
 
@@ -144,54 +111,91 @@ function renderConversation(elements, messages) {
       createChatBubble({
         author: "Gateway",
         role: "system",
-        meta: "Idle",
-        content: "Group created. Send a topic to start the discussion.",
+        avatar: "G",
+        time: Date.now(),
+        content: "群组已创建，发送话题开始讨论",
       }),
     );
+    scrollToBottom(elements.chatPanel);
     return;
   }
 
+  const now = Date.now();
+  let lastTime = null;
+  
   for (const message of messages) {
+    const messageTime = message.createdAt ?? now;
+    
+    if (lastTime !== null && messageTime - lastTime > 5 * 60 * 1000) {
+      elements.chatPanel.appendChild(createTimeDivider(lastTime));
+    }
+    lastTime = messageTime;
+
     const chunks = splitMessageIntoChunks(message.content);
     for (const [index, chunk] of chunks.entries()) {
       elements.chatPanel.appendChild(
-        createChatBubble(toBubbleViewModel(message, chunk, index, chunks.length)),
+        createChatBubble(toBubbleViewModel(message, chunk, index, chunks.length, messageTime)),
       );
     }
   }
 
-  elements.chatPanel.scrollTop = elements.chatPanel.scrollHeight;
+  scrollToBottom(elements.chatPanel);
 }
 
-function createChatBubble({ author, role, meta, content }) {
+function createChatBubble({ author, role, avatar, time, content }) {
   const block = document.createElement("div");
   block.className = `chat-bubble ${role}`;
 
-  const metaNode = document.createElement("div");
-  metaNode.className = "chat-meta";
+  const avatarNode = document.createElement("div");
+  avatarNode.className = `bubble-avatar ${role === "user" ? "me" : role}`;
+  avatarNode.textContent = avatar;
 
-  const authorNode = document.createElement("strong");
+  const contentWrap = document.createElement("div");
+  contentWrap.className = "bubble-content";
+
+  const headerNode = document.createElement("div");
+  headerNode.className = "bubble-header";
+
+  const authorNode = document.createElement("span");
+  authorNode.className = "bubble-author";
   authorNode.textContent = author;
 
-  const detailNode = document.createElement("span");
-  detailNode.textContent = meta;
+  const timeNode = document.createElement("span");
+  timeNode.className = "bubble-time";
+  timeNode.textContent = formatTime(time);
 
-  const contentNode = document.createElement("p");
-  contentNode.textContent = content;
+  const textNode = document.createElement("div");
+  textNode.className = "bubble-text";
+  textNode.textContent = content;
 
-  metaNode.append(authorNode, detailNode);
-  block.append(metaNode, contentNode);
+  headerNode.append(authorNode, timeNode);
+  contentWrap.append(headerNode, textNode);
+  block.append(avatarNode, contentWrap);
   return block;
 }
 
-function toBubbleViewModel(message, content, index = 0, total = 1) {
+function createTimeDivider(time) {
+  const divider = document.createElement("div");
+  divider.className = "time-divider";
+  divider.textContent = formatTime(time);
+  return divider;
+}
+
+function scrollToBottom(panel) {
+  requestAnimationFrame(() => {
+    panel.scrollTop = panel.scrollHeight;
+  });
+}
+
+function toBubbleViewModel(message, content, index = 0, total = 1, time = Date.now()) {
   const suffix = total > 1 ? ` · ${index + 1}/${total}` : "";
 
   if (message.source === AgentId.USER) {
     return {
       author: "Me",
       role: "user",
-      meta: `Round ${message.round}${suffix}`,
+      avatar: "M",
+      time,
       content,
     };
   }
@@ -200,7 +204,8 @@ function toBubbleViewModel(message, content, index = 0, total = 1) {
     return {
       author: "Codex",
       role: "codex",
-      meta: `Round ${message.round} · ${formatKind(message.kind)}${suffix}`,
+      avatar: "C",
+      time,
       content,
     };
   }
@@ -209,7 +214,8 @@ function toBubbleViewModel(message, content, index = 0, total = 1) {
     return {
       author: "Copilot",
       role: "copilot",
-      meta: `Round ${message.round} · ${formatKind(message.kind)}${suffix}`,
+      avatar: "P",
+      time,
       content,
     };
   }
@@ -217,7 +223,8 @@ function toBubbleViewModel(message, content, index = 0, total = 1) {
   return {
     author: "Gateway",
     role: "system",
-    meta: `Round ${message.round ?? 1} · ${formatKind(message.kind)}${suffix}`,
+    avatar: "G",
+    time,
     content,
   };
 }
@@ -231,21 +238,24 @@ function splitMessageIntoChunks(content) {
   return chunks.length > 0 ? chunks : [String(content).trim()];
 }
 
-function formatKind(kind) {
-  switch (kind) {
-    case MessageKind.TASK:
-      return "Topic";
-    case MessageKind.DRAFT:
-      return "Opening";
-    case MessageKind.REVIEW:
-      return "Reply";
-    case MessageKind.REVISION:
-      return "Reply";
-    case MessageKind.ERROR:
-      return "Error";
-    default:
-      return kind;
+function formatTime(timestamp) {
+  if (!timestamp) return "刚刚";
+  
+  const date = new Date(timestamp);
+  const now = new Date();
+  const diff = now - date;
+  
+  if (diff < 60 * 1000) return "刚刚";
+  if (diff < 60 * 60 * 1000) return `${Math.floor(diff / 60000)}分钟前`;
+  
+  const hours = date.getHours().toString().padStart(2, "0");
+  const minutes = date.getMinutes().toString().padStart(2, "0");
+  
+  if (date.toDateString() === now.toDateString()) {
+    return `${hours}:${minutes}`;
   }
+  
+  return `${date.getMonth() + 1}/${date.getDate()} ${hours}:${minutes}`;
 }
 
 function applyAgentStates(elements, run, isFailed) {
@@ -279,13 +289,13 @@ function applyAgentStates(elements, run, isFailed) {
 function summarizeProgress(run, messages) {
   const lastMessage = messages.at(-1);
   if (!lastMessage) {
-    return "Waiting for the first message.";
+    return "等待第一条消息";
   }
 
   return [
-    `Current step: ${formatRunStatus(run.status)}.`,
-    `Latest speaker: ${formatSpeaker(lastMessage.source)}.`,
-    `Latest message: ${truncate(lastMessage.content, 220)}`,
+    `当前步骤: ${formatRunStatus(run.status)}`,
+    `最新发言: ${formatSpeaker(lastMessage.source)}`,
+    `最新消息: ${truncate(lastMessage.content, 220)}`,
   ].join("\n");
 }
 
@@ -344,6 +354,9 @@ function setTimeline(elements, mode) {
     if (className) {
       item.classList.add(className);
     }
-    item.querySelector("p").textContent = text;
+    const statusEl = item.querySelector(".timeline-status");
+    if (statusEl) {
+      statusEl.textContent = text;
+    }
   }
 }
