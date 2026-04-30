@@ -7,11 +7,10 @@ import {
   COPILOT_MODELS,
   DEFAULT_CODEX_MODEL,
   DEFAULT_COPILOT_MODEL,
-  isSupportedCodexModel,
-  isSupportedCopilotModel,
 } from "../gateway/models.js";
 import { createLocalStorageStore } from "../gateway/store/localStorageStore.js";
 import { renderMessages, renderSessionList, renderMemberList, renderHistory, updateProgress, scrollToBottom } from "./render.js";
+import { invoke } from "@tauri-apps/api/core";
 
 const store = createLocalStorageStore();
 const healthClient = createTauriOpenAIHealthClient();
@@ -21,15 +20,13 @@ let sessions = [];
 let currentSession = null;
 let healthState = { ready: false, pending: true, message: "检查认证..." };
 
-const AGENT_NAMES = {
-  codex: "Codex",
-  copilot: "Copilot",
-  gateway: "Gateway",
+const AGENTS = {
+  codex: { name: "Codex", role: "Primary builder", model: DEFAULT_CODEX_MODEL },
+  copilot: { name: "Copilot", role: "Counterpoint reviewer", model: DEFAULT_COPILOT_MODEL },
 };
 
 export function initGatewayController() {
   initElements();
-  initDefaultSessions();
   checkHealth();
   loadHistory();
 }
@@ -74,20 +71,6 @@ function initElements() {
     switchSession(item.dataset.id);
   });
 
-  elements.memberList.addEventListener("click", (e) => {
-    const item = e.target.closest(".member-item");
-    if (!item) return;
-    const memberId = item.dataset.id;
-    if (memberId === "me") return;
-    createPrivateChat(memberId);
-  });
-
-  elements.historyList.addEventListener("click", (e) => {
-    const item = e.target.closest(".history-item");
-    if (!item) return;
-    loadHistoryRun(item.dataset.id);
-  });
-
   elements.sendBtn.addEventListener("click", () => sendMessage(elements));
   elements.messageInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -119,33 +102,86 @@ function initElements() {
   });
 
   elements.configClose.addEventListener("click", () => {
-    elements.configPanel.classList.add("show");
     elements.configPanel.classList.remove("show");
   });
 
   elements.codexAuthBtn.addEventListener("click", () => startAuth(AuthAgent.CODEX));
   elements.copilotAuthBtn.addEventListener("click", () => startAuth(AuthAgent.COPILOT));
-}
 
-function initDefaultSessions() {
-  const defaultGroup = {
-    id: "default-group",
-    type: "group",
-    name: "架构讨论组",
-    members: ["me", "codex", "copilot", "gateway"],
-    messages: [],
-    isDefault: true,
-  };
+  elements.historyList.addEventListener("click", (e) => {
+    const item = e.target.closest(".history-item");
+    if (!item) return;
+    loadHistoryRun(item.dataset.id);
+  });
 
-  sessions.push(defaultGroup);
-  currentSession = defaultGroup.id;
-  renderSessionList(sessions, currentSession);
-  renderMemberList(defaultGroup.members);
-  switchSession(defaultGroup.id);
+  renderEmptyState(elements);
 }
 
 function closeModal() {
   document.getElementById("modal-overlay").classList.add("hidden");
+}
+
+function renderEmptyState(elements) {
+  elements.headerTitle.textContent = "Chat Here";
+  elements.headerCount.textContent = "";
+  elements.chatMessages.innerHTML = `
+    <div class="message-wrapper">
+      <div class="message-avatar gateway">G</div>
+      <div class="message-content">
+        <div class="message-author">Gateway</div>
+        <div class="message-text">欢迎来到 Chat Here！点击左上角"+"创建群聊，或点击联系人私聊</div>
+      </div>
+    </div>
+  `;
+  elements.memberList.innerHTML = `
+    <div class="member-item" data-id="codex">
+      <div class="member-avatar codex">C</div>
+      <div class="member-info">
+        <div class="member-name">Codex</div>
+        <div class="member-role">Primary builder</div>
+      </div>
+    </div>
+    <div class="member-item" data-id="copilot">
+      <div class="member-avatar copilot">P</div>
+      <div class="member-info">
+        <div class="member-name">Copilot</div>
+        <div class="member-role">Counterpoint reviewer</div>
+      </div>
+    </div>
+  `;
+  
+  elements.memberList.querySelectorAll(".member-item").forEach(item => {
+    item.addEventListener("click", () => {
+      const agentId = item.dataset.id;
+      createPrivateChat(agentId);
+    });
+  });
+
+  renderSessionList(sessions, currentSession);
+}
+
+function createPrivateChat(agentId) {
+  const existing = sessions.find(s => s.type === "private" && s.agent === agentId);
+  if (existing) {
+    switchSession(existing.id);
+    return;
+  }
+
+  const agent = AGENTS[agentId];
+  const chat = {
+    id: `private-${agentId}-${Date.now()}`,
+    type: "private",
+    name: agent.name,
+    agent: agentId,
+    model: agent.model,
+    messages: [],
+    lastMessage: "开始私聊",
+    lastTime: Date.now(),
+  };
+
+  sessions.unshift(chat);
+  renderSessionList(sessions, currentSession);
+  switchSession(chat.id);
 }
 
 function createGroup(elements) {
@@ -156,10 +192,10 @@ function createGroup(elements) {
   }
 
   const checkboxes = document.querySelectorAll("#member-checkbox-list input:checked");
-  const members = Array.from(checkboxes).map(cb => cb.value);
+  const selectedAgents = Array.from(checkboxes).map(cb => cb.value);
 
-  if (members.length < 2) {
-    alert("请至少选择2个成员");
+  if (selectedAgents.length < 1) {
+    alert("请至少选择1个成员");
     return;
   }
 
@@ -167,7 +203,10 @@ function createGroup(elements) {
     id: `group-${Date.now()}`,
     type: "group",
     name,
-    members: ["me", ...members],
+    agents: selectedAgents,
+    model: elements.modelInput.value,
+    copilotModel: elements.copilotModelInput.value,
+    rounds: parseInt(elements.roundInput.value) || 1,
     messages: [],
     lastMessage: "群聊已创建",
     lastTime: Date.now(),
@@ -179,46 +218,100 @@ function createGroup(elements) {
   switchSession(group.id);
 }
 
-function createPrivateChat(memberId) {
-  const existing = sessions.find(s => s.type === "private" && s.member === memberId);
-  if (existing) {
-    switchSession(existing.id);
-    return;
-  }
-
-  const chat = {
-    id: `private-${memberId}-${Date.now()}`,
-    type: "private",
-    name: AGENT_NAMES[memberId] || memberId,
-    member: memberId,
-    members: ["me", memberId],
-    messages: [],
-    lastMessage: "开始私聊",
-    lastTime: Date.now(),
-  };
-
-  sessions.unshift(chat);
-  renderSessionList(sessions, currentSession);
-  switchSession(chat.id);
-}
-
 function switchSession(sessionId) {
   currentSession = sessionId;
   const session = sessions.find(s => s.id === sessionId);
   if (!session) return;
 
-  document.getElementById("header-title").textContent = session.name;
-  document.getElementById("header-count").textContent = session.type === "group" 
-    ? `${session.members.length}人` 
+  const elements = {
+    headerTitle: document.getElementById("header-title"),
+    headerCount: document.getElementById("header-count"),
+    chatMessages: document.getElementById("chat-messages"),
+    memberList: document.getElementById("member-list"),
+    detailPanel: document.getElementById("detail-panel"),
+  };
+
+  elements.headerTitle.textContent = session.name;
+  elements.headerCount.textContent = session.type === "group" 
+    ? `${session.agents.length + 1}人` 
     : "私聊";
 
   renderSessionList(sessions, currentSession);
-  renderMemberList(session.members);
-  renderMessages(session.messages || []);
-
-  if (session.isDefault) {
-    document.getElementById("detail-panel").classList.remove("hidden");
+  
+  if (session.type === "private") {
+    renderMemberListPrivate(session.agent);
+  } else {
+    renderMemberListGroup(session.agents);
   }
+
+  renderMessages(session.messages || []);
+  
+  if (!session.messages || session.messages.length === 0) {
+    elements.chatMessages.innerHTML = `
+      <div class="message-wrapper">
+        <div class="message-avatar gateway">G</div>
+        <div class="message-content">
+          <div class="message-author">Gateway</div>
+          <div class="message-text">${session.type === "private" 
+            ? `开始与 ${session.name} 私聊，发送消息开始对话` 
+            : "群聊已创建，发送话题开始讨论"}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  elements.detailPanel.classList.remove("hidden");
+}
+
+function renderMemberListPrivate(agentId) {
+  const container = document.getElementById("member-list");
+  const agent = AGENTS[agentId];
+  
+  container.innerHTML = `
+    <div class="member-item">
+      <div class="member-avatar me">M</div>
+      <div class="member-info">
+        <div class="member-name">Me</div>
+        <div class="member-role">用户</div>
+      </div>
+    </div>
+    <div class="member-item">
+      <div class="member-avatar ${agentId}">${agentId.charAt(0).toUpperCase()}</div>
+      <div class="member-info">
+        <div class="member-name">${agent.name}</div>
+        <div class="member-role">${agent.role}</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderMemberListGroup(agents) {
+  const container = document.getElementById("member-list");
+  
+  let html = `
+    <div class="member-item">
+      <div class="member-avatar me">M</div>
+      <div class="member-info">
+        <div class="member-name">Me</div>
+        <div class="member-role">用户</div>
+      </div>
+    </div>
+  `;
+  
+  agents.forEach(agentId => {
+    const agent = AGENTS[agentId];
+    html += `
+      <div class="member-item">
+        <div class="member-avatar ${agentId}">${agentId.charAt(0).toUpperCase()}</div>
+        <div class="member-info">
+          <div class="member-name">${agent.name}</div>
+          <div class="member-role">${agent.role}</div>
+        </div>
+      </div>
+    `;
+  });
+  
+  container.innerHTML = html;
 }
 
 async function sendMessage(elements) {
@@ -231,28 +324,18 @@ async function sendMessage(elements) {
 
   input.value = "";
 
+  appendMessage(session, "me", text);
+  renderMessages(session.messages);
+  scrollToBottom(elements.chatMessages);
+
   if (session.type === "private") {
-    appendMessage(session, "me", text);
-    renderMessages(session.messages);
-    scrollToBottom(elements.chatMessages);
-    
-    appendMessage(session, session.member, "私聊功能暂未接入AI模型，请使用群聊讨论功能");
-    renderMessages(session.messages);
-    scrollToBottom(elements.chatMessages);
-    return;
+    await sendPrivateMessage(session, elements);
+  } else {
+    await sendGroupMessage(session, elements);
   }
+}
 
-  if (!session.isDefault) {
-    appendMessage(session, "me", text);
-    renderMessages(session.messages);
-    scrollToBottom(elements.chatMessages);
-    
-    appendMessage(session, "gateway", "自定义群聊暂未接入AI模型，请使用默认群聊");
-    renderMessages(session.messages);
-    scrollToBottom(elements.chatMessages);
-    return;
-  }
-
+async function sendPrivateMessage(session, elements) {
   if (!healthState.ready) {
     appendMessage(session, "gateway", `认证未就绪: ${healthState.message}`);
     renderMessages(session.messages);
@@ -261,17 +344,58 @@ async function sendMessage(elements) {
   }
 
   elements.sendBtn.disabled = true;
-  appendMessage(session, "me", text);
-  renderMessages(session.messages);
-  scrollToBottom(elements.chatMessages);
 
+  try {
+    const response = await invoke("chat_with_agent", {
+      request: {
+        agent: session.agent,
+        model: session.model,
+        message: session.messages.map(m => `${m.from}: ${m.content}`).join("\n"),
+      },
+    });
+
+    const replyText = response.output_text || "收到回复";
+    appendMessage(session, session.agent, replyText);
+    renderMessages(session.messages);
+    scrollToBottom(elements.chatMessages);
+  } catch (err) {
+    appendMessage(session, "gateway", `发生错误: ${err}`);
+    renderMessages(session.messages);
+    scrollToBottom(elements.chatMessages);
+  } finally {
+    elements.sendBtn.disabled = false;
+  }
+}
+
+async function sendGroupMessage(session, elements) {
+  if (!healthState.ready) {
+    appendMessage(session, "gateway", `认证未就绪: ${healthState.message}`);
+    renderMessages(session.messages);
+    scrollToBottom(elements.chatMessages);
+    return;
+  }
+
+  const lastUserMessage = session.messages.filter(m => m.from === "me").pop();
+  const prompt = lastUserMessage?.content || "";
+
+  elements.sendBtn.disabled = true;
+  elements.detailPanel.classList.remove("hidden");
   updateProgress("dispatch", "active", "进行中");
 
   try {
-    const result = await startRun(text, {
+    const result = await startRun(prompt, {
       store,
-      maxRounds: parseInt(elements.roundInput.value) || 1,
-      providers: buildConfig(elements),
+      maxRounds: session.rounds,
+      providers: {
+        codex: {
+          provider: ProviderId.TAURI_CODEX,
+          model: session.model,
+        },
+        copilot: {
+          provider: ProviderId.TAURI_COPILOT,
+          model: session.copilotModel,
+        },
+      },
       onUpdate: (progress) => {
         syncMessagesFromRun(session, progress.messages);
         renderMessages(session.messages);
@@ -285,7 +409,7 @@ async function sendMessage(elements) {
     scrollToBottom(elements.chatMessages);
     updateProgressFromRun(result.run);
     
-    elements.summaryBox.textContent = result.decision 
+    document.getElementById("summary-box").textContent = result.decision 
       ? `${result.decision.summary}\n\n${result.decision.rationale}`
       : "讨论完成";
 
@@ -312,12 +436,22 @@ function appendMessage(session, from, content) {
 }
 
 function syncMessagesFromRun(session, runMessages) {
-  session.messages = runMessages.map(msg => ({
-    id: `msg-${msg.createdAt || Date.now()}`,
-    from: msg.source.toLowerCase(),
-    content: msg.content,
-    time: msg.createdAt || Date.now(),
-  }));
+  const existingIds = session.messages.map(m => m.id);
+  
+  runMessages.forEach(msg => {
+    const id = `run-${msg.createdAt || Date.now()}`;
+    if (!existingIds.includes(id)) {
+      session.messages.push({
+        id,
+        from: msg.source.toLowerCase(),
+        content: msg.content,
+        time: msg.createdAt || Date.now(),
+      });
+    }
+  });
+  
+  session.lastMessage = runMessages[runMessages.length - 1]?.content?.slice(0, 30) || "讨论中";
+  session.lastTime = Date.now();
 }
 
 function updateProgressFromRun(run) {
@@ -354,7 +488,7 @@ async function checkHealth() {
 
 async function startAuth(agent) {
   try {
-    const result = await authBroker.start(agent);
+    await authBroker.start(agent);
     await checkHealth();
   } catch (err) {
     document.getElementById("provider-health").textContent = err.message;
@@ -388,31 +522,32 @@ async function loadHistoryRun(runId) {
   const snapshot = await store.getRun(runId);
   if (!snapshot) return;
 
-  const session = sessions.find(s => s.isDefault);
-  if (session) {
-    syncMessagesFromRun(session, snapshot.messages || []);
-    renderMessages(session.messages);
-    scrollToBottom(document.getElementById("chat-messages"));
+  const container = document.getElementById("chat-messages");
+  container.innerHTML = "";
+
+  snapshot.messages?.forEach(msg => {
+    const row = document.createElement("div");
+    const from = msg.source?.toLowerCase() || "gateway";
+    const isSelf = from === "user";
+    row.className = `message-wrapper ${isSelf ? "self" : ""}`;
     
-    document.getElementById("summary-box").textContent = snapshot.decision
-      ? `${snapshot.decision.summary}\n\n${snapshot.decision.rationale}`
-      : "历史记录";
-  }
+    row.innerHTML = `
+      <div class="message-avatar ${from}">${from.charAt(0).toUpperCase()}</div>
+      <div class="message-content">
+        ${!isSelf ? `<div class="message-author">${from}</div>` : ""}
+        <div class="message-text">${msg.content}</div>
+        <div class="message-time">${formatTime(msg.createdAt)}</div>
+      </div>
+    `;
+    
+    container.appendChild(row);
+  });
 
-  switchSession(session?.id || "default-group");
-}
-
-function buildConfig(elements) {
-  return {
-    codex: {
-      provider: ProviderId.TAURI_CODEX,
-      model: elements.modelInput.value || DEFAULT_CODEX_MODEL,
-    },
-    copilot: {
-      provider: ProviderId.TAURI_COPILOT,
-      model: elements.copilotModelInput.value || DEFAULT_COPILOT_MODEL,
-    },
-  };
+  scrollToBottom(container);
+  
+  document.getElementById("summary-box").textContent = snapshot.decision
+    ? `${snapshot.decision.summary}\n\n${snapshot.decision.rationale}`
+    : "历史记录";
 }
 
 function renderModelOptions(select, models, selected) {
@@ -424,4 +559,12 @@ function renderModelOptions(select, models, selected) {
     opt.selected = model.id === selected;
     select.appendChild(opt);
   });
+}
+
+function formatTime(timestamp) {
+  if (!timestamp) return "刚刚";
+  const date = new Date(timestamp);
+  const h = date.getHours().toString().padStart(2, "0");
+  const m = date.getMinutes().toString().padStart(2, "0");
+  return `${h}:${m}`;
 }

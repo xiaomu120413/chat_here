@@ -443,14 +443,69 @@ fn read_and_cleanup_output_file(path: &std::path::Path) -> Option<String> {
 
 fn main() {
     tauri::Builder::default()
+        .setup(|app| {
+            use tauri::menu::{Menu, MenuItem};
+            
+            let show_item = MenuItem::with_id(app, "show", "显示窗口")?;
+            let hide_item = MenuItem::with_id(app, "hide", "隐藏窗口")?;
+            let quit_item = MenuItem::with_id(app, "quit", "退出")?;
+            
+            let menu = Menu::with_items(app, &[&show_item, &hide_item, &quit_item])?;
+            
+            let _tray = tauri::tray::Tray::new()
+                .menu(&menu)
+                .icon(app.default_window_icon().unwrap().clone())
+                .on_menu_event(|app, event| {
+                    match event.id.as_ref() {
+                        "show" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                window.show().unwrap();
+                                window.set_focus().unwrap();
+                            }
+                        }
+                        "hide" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                window.hide().unwrap();
+                            }
+                        }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    }
+                });
+            
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             greet,
             openai_health,
             start_agent_auth,
             codex_exec_response,
             copilot_exec_response,
-            openai_response
+            openai_response,
+            chat_with_agent
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[derive(Debug, Deserialize)]
+struct ChatRequest {
+    agent: String,
+    model: String,
+    message: String,
+}
+
+#[tauri::command]
+async fn chat_with_agent(request: ChatRequest) -> Result<Value, OpenAiError> {
+    let prompt = format!("user: {}", request.message);
+    
+    match request.agent.as_str() {
+        "codex" => run_codex_exec(request.model, prompt),
+        "copilot" => run_copilot_exec(request.model, prompt),
+        _ => Err(OpenAiError {
+            message: format!("unsupported agent: {}", request.agent),
+        }),
+    }
 }

@@ -16,7 +16,9 @@
         "title": "Chat Here",
         "width": 1200,
         "height": 800,
-        "resizable": true
+        "resizable": true,
+        "visible": true,
+        "focus": true
       }
     ],
     "security": {
