@@ -7,28 +7,45 @@ on:
     branches: [ "main" ]
 
 jobs:
-  build:
+  frontend:
     runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        node-version: [20.x]
 
     steps:
     - uses: actions/checkout@v4
     
-    - name: Use Node.js ${{ matrix.node-version }}
+    - name: Use Node.js 20
       uses: actions/setup-node@v4
       with:
-        node-version: ${{ matrix.node-version }}
+        node-version: 20.x
         cache: 'npm'
         cache-dependency-path: 'chat_here/package-lock.json'
     
-    - name: Install frontend dependencies
+    - name: Install dependencies
       run: cd chat_here && npm ci
     
     - name: Build frontend
-      run: cd chat_here && npm run frontend:build --if-present
+      run: cd chat_here && npm run frontend:build
+
+  rust:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
     
-    - name: Run tests
-      run: cd chat_here && npm test --if-present
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+    
+    - name: Cache cargo
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          chat_here/src-tauri/target/
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: ${{ runner.os }}-cargo-
+    
+    - name: Build Rust backend
+      run: cd chat_here/src-tauri && cargo check
