@@ -1,0 +1,20 @@
+{
+  "name": "chat_here",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "frontend:dev": "vite --port 1420 --strictPort",
+    "frontend:build": "vite build",
+    "test": "node --test src/gateway/tests/*.test.js"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.0.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.0.0",
+    "vite": "^5.4.0"
+  }
+}
