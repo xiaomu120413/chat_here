@@ -7,166 +7,176 @@
     <link rel="stylesheet" href="./src/styles.css" />
   </head>
   <body>
-    <main class="im-app">
+    <main class="im-app" id="im-app">
       <aside class="sidebar">
         <header class="sidebar-header">
-          <div class="user-avatar">
-            <span class="avatar-text">M</span>
+          <div class="user-profile">
+            <div class="user-avatar">
+              <span>M</span>
+            </div>
+            <span class="user-name">Me</span>
           </div>
-          <div class="app-title">Chat Here</div>
+          <button class="create-btn" id="create-btn" title="创建群聊">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+              <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+            </svg>
+          </button>
         </header>
 
         <nav class="sidebar-tabs">
-          <button class="tab-btn active" data-tab="chats">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-              <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z"/>
-            </svg>
-            <span>聊天</span>
-          </button>
-          <button class="tab-btn" data-tab="contacts">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-              <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
-            </svg>
-            <span>联系人</span>
-          </button>
-          <button class="tab-btn" data-tab="history">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-              <path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/>
-            </svg>
-            <span>历史</span>
-          </button>
+          <button class="tab-btn active" data-tab="chats">聊天</button>
+          <button class="tab-btn" data-tab="contacts">联系人</button>
         </nav>
+
+        <div class="search-box">
+          <input type="text" id="search-input" placeholder="搜索" />
+        </div>
 
         <section class="session-list" id="session-list">
         </section>
       </aside>
 
-      <section class="chat-main">
-        <header class="chat-header" id="chat-header">
-          <div class="header-info">
-            <span class="header-title">架构讨论组</span>
-            <span class="header-members">4人</span>
+      <section class="chat-area" id="chat-area">
+        <header class="chat-header">
+          <div class="header-left">
+            <span class="header-title" id="header-title">架构讨论组</span>
+            <span class="header-count" id="header-count">4人</span>
           </div>
-          <div class="header-status">
-            <span class="status-tag" id="codex-state">Codex Idle</span>
-            <span class="status-tag" id="copilot-state">Copilot Idle</span>
-            <span class="round-tag" id="round-badge">Round 0</span>
-          </div>
-        </header>
-
-        <div class="chat-messages" id="chat-panel">
-        </div>
-
-        <footer class="chat-input">
-          <div class="input-toolbar">
-            <button class="tool-btn config-toggle" id="config-toggle" title="设置">
+          <div class="header-right">
+            <button class="header-btn" id="show-config" title="设置">
               <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-                <path d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.07.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+                <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/>
+              </svg>
+            </button>
+            <button class="header-btn" id="show-detail" title="详情">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46c.78-1.23 1.24-2.69 1.24-4.26 0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 9.74c-.78 1.23-1.24 2.69-1.24 4.26 0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/>
               </svg>
             </button>
           </div>
+        </header>
+
+        <div class="chat-messages" id="chat-messages">
+        </div>
+
+        <footer class="chat-input">
+          <div class="input-box">
+            <textarea id="message-input" placeholder="发送消息..." rows="1"></textarea>
+            <button class="send-btn" id="send-btn">发送</button>
+          </div>
           
-          <div class="config-panel hidden" id="config-panel">
-            <div class="config-row">
-              <label>Codex Model</label>
-              <select id="model-input"></select>
+          <div class="config-panel" id="config-panel">
+            <div class="config-header">
+              <span class="config-title">群聊设置</span>
+              <button class="config-close" id="config-close">×</button>
             </div>
-            <div class="config-row">
-              <label>Copilot Model</label>
-              <select id="copilot-model-input"></select>
-            </div>
-            <div class="config-row">
-              <label>轮次</label>
-              <input id="round-input" type="number" min="1" max="5" value="1" />
-            </div>
-            <div class="config-auth">
-              <button id="codex-auth-button" type="button">Codex 登录</button>
-              <button id="copilot-auth-button" type="button">Copilot 登录</button>
-            </div>
-            <div class="config-status">
-              <span id="provider-health">检查认证</span>
-              <span id="status">Idle</span>
+            <div class="config-body">
+              <div class="config-item">
+                <label>Codex Model</label>
+                <select id="model-input"></select>
+              </div>
+              <div class="config-item">
+                <label>Copilot Model</label>
+                <select id="copilot-model-input"></select>
+              </div>
+              <div class="config-item">
+                <label>讨论轮次</label>
+                <input id="round-input" type="number" min="1" max="5" value="1" />
+              </div>
+              <div class="config-auth">
+                <button id="codex-auth-btn">Codex 讻证</button>
+                <button id="copilot-auth-btn">Copilot 认证</button>
+              </div>
+              <div class="config-status">
+                <span id="provider-health">检查认证...</span>
+              </div>
             </div>
           </div>
-
-          <form id="task-form" class="input-form">
-            <textarea id="task-input" rows="1" placeholder="输入消息..."></textarea>
-            <button id="send-button" type="submit">发送</button>
-          </form>
         </footer>
       </section>
 
-      <aside class="detail-panel hidden" id="detail-panel">
+      <aside class="detail-panel" id="detail-panel">
         <header class="detail-header">
-          <h2>群组详情</h2>
-          <button class="close-btn" id="close-detail">×</button>
+          <span class="detail-title">群聊详情</span>
+          <button class="detail-close" id="detail-close">×</button>
         </header>
         
         <section class="detail-section">
-          <h3>成员</h3>
+          <h3>成员列表</h3>
           <div class="member-list" id="member-list">
-            <div class="member-row" data-member="me">
-              <div class="member-avatar me">M</div>
-              <div class="member-info">
-                <span class="member-name">Me</span>
-                <span class="member-role">用户</span>
-              </div>
-            </div>
-            <div class="member-row" data-member="codex">
-              <div class="member-avatar codex">C</div>
-              <div class="member-info">
-                <span class="member-name">Codex</span>
-                <span class="member-role">Primary builder</span>
-              </div>
-            </div>
-            <div class="member-row" data-member="copilot">
-              <div class="member-avatar copilot">P</div>
-              <div class="member-info">
-                <span class="member-name">Copilot</span>
-                <span class="member-role">Counterpoint reviewer</span>
-              </div>
-            </div>
-            <div class="member-row" data-member="gateway">
-              <div class="member-avatar gateway">G</div>
-              <div class="member-info">
-                <span class="member-name">Gateway</span>
-                <span class="member-role">Turn manager</span>
-              </div>
-            </div>
           </div>
         </section>
 
         <section class="detail-section">
           <h3>运行进度</h3>
-          <div class="progress-timeline">
-            <div class="progress-item" id="timeline-dispatch">
+          <div class="progress-list" id="progress-list">
+            <div class="progress-item" id="progress-dispatch">
               <span class="progress-dot"></span>
-              <span class="progress-label">Dispatch</span>
-              <span class="progress-status">Waiting</span>
+              <span class="progress-text">Dispatch</span>
+              <span class="progress-status">等待</span>
             </div>
-            <div class="progress-item" id="timeline-review">
+            <div class="progress-item" id="progress-review">
               <span class="progress-dot"></span>
-              <span class="progress-label">Group Chat</span>
-              <span class="progress-status">Waiting</span>
+              <span class="progress-text">Group Chat</span>
+              <span class="progress-status">等待</span>
             </div>
-            <div class="progress-item" id="timeline-decision">
+            <div class="progress-item" id="progress-decision">
               <span class="progress-dot"></span>
-              <span class="progress-label">Decision</span>
-              <span class="progress-status">Waiting</span>
+              <span class="progress-text">Decision</span>
+              <span class="progress-status">等待</span>
             </div>
           </div>
-          <div class="summary-box" id="summary-text">
-            Gateway 状态和决策将在此显示
+          <div class="summary-box" id="summary-box">
+            Gateway 状态将在此显示
           </div>
         </section>
 
         <section class="detail-section">
           <h3>历史记录</h3>
           <div class="history-list" id="history-list">
-            <p class="empty-text">暂无历史</p>
+            <p class="empty-tip">暂无历史</p>
           </div>
         </section>
       </aside>
+
+      <div class="modal-overlay hidden" id="modal-overlay">
+        <div class="modal-box" id="create-modal">
+          <div class="modal-header">
+            <span class="modal-title">创建群聊</span>
+            <button class="modal-close" id="modal-close">×</button>
+          </div>
+          <div class="modal-body">
+            <div class="modal-item">
+              <label>群聊名称</label>
+              <input type="text" id="group-name-input" placeholder="输入群聊名称" />
+            </div>
+            <div class="modal-item">
+              <label>选择成员</label>
+              <div class="member-checkbox-list" id="member-checkbox-list">
+                <label class="member-checkbox">
+                  <input type="checkbox" value="codex" checked />
+                  <span class="checkbox-avatar codex">C</span>
+                  <span class="checkbox-name">Codex</span>
+                </label>
+                <label class="member-checkbox">
+                  <input type="checkbox" value="copilot" checked />
+                  <span class="checkbox-avatar copilot">P</span>
+                  <span class="checkbox-name">Copilot</span>
+                </label>
+                <label class="member-checkbox">
+                  <input type="checkbox" value="gateway" checked />
+                  <span class="checkbox-avatar gateway">G</span>
+                  <span class="checkbox-name">Gateway</span>
+                </label>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="modal-btn cancel" id="create-cancel">取消</button>
+            <button class="modal-btn confirm" id="create-confirm">创建</button>
+          </div>
+        </div>
+      </div>
     </main>
 
     <script type="module" src="./src/main.js"></script>

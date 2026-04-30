@@ -1,42 +1,114 @@
-import { AgentId, MessageKind, RunStatus } from "../gateway/schema/index.js";
+const AVATAR_COLORS = {
+  me: "me",
+  codex: "codex",
+  copilot: "copilot",
+  gateway: "gateway",
+};
 
-export function renderEmpty(elements) {
-  elements.statusText.textContent = "Idle";
-  elements.roundBadge.textContent = "Round 0";
-  elements.summaryText.textContent = "Gateway 状态和决策将在此显示";
-  elements.codexState.textContent = "Codex Idle";
-  elements.copilotState.textContent = "Copilot Idle";
-  clearTimeline(elements);
-  renderMessages(elements, [], null);
+const AVATAR_TEXT = {
+  me: "M",
+  codex: "C",
+  copilot: "P",
+  gateway: "G",
+};
+
+const NAMES = {
+  me: "Me",
+  codex: "Codex",
+  copilot: "Copilot",
+  gateway: "Gateway",
+};
+
+export function renderSessionList(sessions, currentId) {
+  const container = document.getElementById("session-list");
+  container.innerHTML = "";
+
+  const groups = sessions.filter(s => s.type === "group");
+  const privates = sessions.filter(s => s.type === "private");
+
+  if (groups.length > 0) {
+    const header = document.createElement("div");
+    header.className = "session-header";
+    header.textContent = "群聊";
+    container.appendChild(header);
+
+    groups.forEach(session => {
+      container.appendChild(createSessionItem(session, currentId));
+    });
+  }
+
+  if (privates.length > 0) {
+    const header = document.createElement("div");
+    header.className = "session-header";
+    header.textContent = "私聊";
+    container.appendChild(header);
+
+    privates.forEach(session => {
+      container.appendChild(createSessionItem(session, currentId));
+    });
+  }
 }
 
-export function renderLoading(elements, prompt) {
-  elements.statusText.textContent = "开始讨论";
-  elements.roundBadge.textContent = "Round 1";
-  elements.summaryText.textContent = `话题: ${prompt}`;
-  elements.codexState.textContent = "Codex Thinking";
-  elements.copilotState.textContent = "Copilot Waiting";
-  renderMessages(elements, [
-    {
-      source: AgentId.USER,
-      kind: MessageKind.TASK,
-      round: 1,
-      content: prompt,
-      createdAt: Date.now(),
-    },
-  ], { round: 1, status: "RUNNING" });
+function createSessionItem(session, currentId) {
+  const item = document.createElement("div");
+  item.className = `session-item ${session.id === currentId ? "active" : ""}`;
+  item.dataset.id = session.id;
+
+  const avatarClass = session.type === "group" ? "group" : session.member;
+  const avatarText = session.type === "group" ? "群" : AVATAR_TEXT[session.member];
+
+  item.innerHTML = `
+    <div class="session-avatar ${avatarClass}">${avatarText}</div>
+    <div class="session-info">
+      <div class="session-name">${session.name}</div>
+      <div class="session-desc">${session.lastMessage || "暂无消息"}</div>
+    </div>
+    <div class="session-time">${formatTime(session.lastTime)}</div>
+  `;
+
+  return item;
 }
 
-export function renderMessages(elements, messages, run) {
-  elements.chatPanel.innerHTML = "";
+export function renderMemberList(members) {
+  const container = document.getElementById("member-list");
+  container.innerHTML = "";
+
+  const roles = {
+    me: "用户",
+    codex: "Primary builder",
+    copilot: "Counterpoint reviewer",
+    gateway: "Turn manager",
+  };
+
+  members.forEach(member => {
+    const item = document.createElement("div");
+    item.className = "member-item";
+    item.dataset.id = member;
+
+    item.innerHTML = `
+      <div class="member-avatar ${AVATAR_COLORS[member]}">${AVATAR_TEXT[member]}</div>
+      <div class="member-info">
+        <div class="member-name">${NAMES[member]}</div>
+        <div class="member-role">${roles[member] || ""}</div>
+      </div>
+    `;
+
+    container.appendChild(item);
+  });
+}
+
+export function renderMessages(messages) {
+  const container = document.getElementById("chat-messages");
+  container.innerHTML = "";
 
   if (!messages || messages.length === 0) {
-    elements.chatPanel.innerHTML = `
-      <div class="message-row">
+    container.innerHTML = `
+      <div class="message-wrapper">
         <div class="message-avatar gateway">G</div>
-        <div class="message-body">
-          <span class="message-author">Gateway</span>
-          <div class="message-content">群组已创建，发送话题开始讨论</div>
+        <div class="message-content">
+          <div class="message-author">Gateway</div>
+          <div class="message-text">群聊已创建，发送话题开始讨论</div>
+          <div class="message-time">刚刚</div>
         </div>
       </div>
     `;
@@ -44,192 +116,82 @@ export function renderMessages(elements, messages, run) {
   }
 
   let lastTime = null;
-  const now = Date.now();
 
-  for (const message of messages) {
-    const msgTime = message.createdAt || now;
+  messages.forEach(msg => {
+    const msgTime = msg.time || msg.createdAt || Date.now();
     
     if (lastTime && msgTime - lastTime > 300000) {
       const divider = document.createElement("div");
       divider.className = "time-divider";
       divider.textContent = formatTime(lastTime);
-      elements.chatPanel.appendChild(divider);
+      container.appendChild(divider);
     }
     lastTime = msgTime;
 
-    elements.chatPanel.appendChild(createMessageRow(message, msgTime));
-  }
-
-  scrollToBottom(elements.chatPanel);
-  
-  if (run) {
-    applyAgentStates(elements, run);
-  }
+    container.appendChild(createMessageRow(msg, msgTime));
+  });
 }
 
-export function renderSessionList(container, sessions, currentId) {
+function createMessageRow(msg, time) {
+  const from = msg.from || (msg.source ? msg.source.toLowerCase() : "gateway");
+  const content = msg.content || "";
+  const isSelf = from === "me" || from === "user";
+
+  const wrapper = document.createElement("div");
+  wrapper.className = `message-wrapper ${isSelf ? "self" : ""}`;
+
+  wrapper.innerHTML = `
+    <div class="message-avatar ${AVATAR_COLORS[from] || "gateway"}">${AVATAR_TEXT[from] || "G"}</div>
+    <div class="message-content">
+      ${!isSelf ? `<div class="message-author">${NAMES[from] || from}</div>` : ""}
+      <div class="message-text">${escapeHtml(content)}</div>
+      <div class="message-time">${formatTime(time)}</div>
+    </div>
+  `;
+
+  return wrapper;
+}
+
+export function renderHistory(snapshots) {
+  const container = document.getElementById("history-list");
   container.innerHTML = "";
 
-  const groupSessions = sessions.filter(s => s.type === "group");
-  const privateSessions = sessions.filter(s => s.type === "private");
-
-  if (groupSessions.length > 0) {
-    const groupHeader = document.createElement("div");
-    groupHeader.className = "session-group-title";
-    groupHeader.textContent = "群聊";
-    container.appendChild(groupHeader);
-
-    for (const session of groupSessions) {
-      container.appendChild(createSessionItem(session, currentId));
-    }
-  }
-
-  if (privateSessions.length > 0) {
-    const privateHeader = document.createElement("div");
-    privateHeader.className = "session-group-title";
-    privateHeader.textContent = "私聊";
-    container.appendChild(privateHeader);
-
-    for (const session of privateSessions) {
-      container.appendChild(createSessionItem(session, currentId));
-    }
-  }
-
-  if (sessions.length === 0) {
-    container.innerHTML = '<p class="empty-text">暂无会话</p>';
-  }
-}
-
-function createSessionItem(session, currentId) {
-  const item = document.createElement("div");
-  item.className = `session-item ${session.id === currentId ? "active" : ""}`;
-  item.dataset.session = session.id;
-
-  const avatarClass = session.type === "group" ? "group" : session.member;
-  const avatarText = session.type === "group" ? "群" : session.member.charAt(0).toUpperCase();
-
-  item.innerHTML = `
-    <div class="session-avatar ${avatarClass}">${avatarText}</div>
-    <div class="session-content">
-      <span class="session-name">${session.name}</span>
-      <span class="session-preview">${session.lastMessage || "暂无消息"}</span>
-    </div>
-    <div class="session-meta">
-      <span class="session-time">${session.lastTime ? formatTime(session.lastTime) : ""}</span>
-      <span class="session-unread ${session.unread > 0 ? "" : "hidden"}">${session.unread || 0}</span>
-    </div>
-  `;
-
-  return item;
-}
-
-export function renderPrivateChat(elements, session) {
-  elements.chatPanel.innerHTML = `
-    <div class="message-row">
-      <div class="message-avatar ${session.member}">${session.member.charAt(0).toUpperCase()}</div>
-      <div class="message-body">
-        <span class="message-author">${session.name}</span>
-        <div class="message-content">私聊功能正在开发中...</div>
-      </div>
-    </div>
-  `;
-  
-  elements.statusText.textContent = "私聊暂不可用";
-}
-
-export function renderHistory(elements, snapshots) {
-  elements.historyList.innerHTML = "";
-
   if (!snapshots || snapshots.length === 0) {
-    elements.historyList.innerHTML = '<p class="empty-text">暂无历史</p>';
+    container.innerHTML = '<p class="empty-tip">暂无历史</p>';
     return;
   }
 
-  for (const snapshot of snapshots) {
+  snapshots.forEach(snap => {
     const item = document.createElement("div");
     item.className = "history-item";
-    item.dataset.runId = snapshot.run.id;
+    item.dataset.id = snap.run.id;
 
-    const title = snapshot.task?.prompt || snapshot.run.id;
-    const status = snapshot.run.status;
-    const time = formatTime(snapshot.run.startedAt);
+    const title = snap.task?.prompt || snap.run.id;
+    const time = formatTime(snap.run.startedAt);
 
     item.innerHTML = `
-      <span class="history-item-title">${truncate(title, 30)}</span>
-      <span class="history-item-meta">${status} · ${time}</span>
+      <div class="history-title">${truncate(title, 40)}</div>
+      <div class="history-meta">${snap.run.status} · ${time}</div>
     `;
 
-    elements.historyList.appendChild(item);
-  }
+    container.appendChild(item);
+  });
 }
 
-export function renderError(elements, error) {
-  elements.statusText.textContent = "失败";
-  elements.summaryText.textContent = getErrorMessage(error);
-  elements.codexState.textContent = "Codex Error";
-  elements.copilotState.textContent = "Copilot Error";
-  clearTimeline(elements);
-  
-  elements.chatPanel.innerHTML = `
-    <div class="message-row">
-      <div class="message-avatar gateway">G</div>
-      <div class="message-body">
-        <span class="message-author">Gateway</span>
-        <div class="message-content">发生错误: ${getErrorMessage(error)}</div>
-      </div>
-    </div>
-  `;
+export function updateProgress(stage, state, text) {
+  const item = document.getElementById(`progress-${stage}`);
+  if (!item) return;
+
+  const dot = item.querySelector(".progress-dot");
+  const status = item.querySelector(".progress-status");
+
+  dot.className = `progress-dot ${state}`;
+  status.textContent = text || (state === "done" ? "完成" : state === "active" ? "进行中" : "等待");
 }
 
-function createMessageRow(message, time) {
-  const row = document.createElement("div");
-  const isSelf = message.source === AgentId.USER;
-  row.className = `message-row ${isSelf ? "self" : ""}`;
-
-  let avatarClass = "";
-  let avatarText = "";
-  let author = "";
-
-  switch (message.source) {
-    case AgentId.USER:
-      avatarClass = "me";
-      avatarText = "M";
-      author = "Me";
-      break;
-    case AgentId.CODEX:
-      avatarClass = "codex";
-      avatarText = "C";
-      author = "Codex";
-      break;
-    case AgentId.COPILOT:
-      avatarClass = "copilot";
-      avatarText = "P";
-      author = "Copilot";
-      break;
-    default:
-      avatarClass = "gateway";
-      avatarText = "G";
-      author = "Gateway";
-  }
-
-  const avatar = isSelf ? "" : `<div class="message-avatar ${avatarClass}">${avatarText}</div>`;
-  const authorEl = isSelf ? "" : `<span class="message-author">${author}</span>`;
-
-  row.innerHTML = `
-    ${avatar}
-    <div class="message-body">
-      ${authorEl}
-      <div class="message-content">${escapeHtml(message.content)}</div>
-      <span class="message-time">${formatTime(time)}</span>
-    </div>
-  `;
-
-  return row;
-}
-
-function scrollToBottom(panel) {
+export function scrollToBottom(container) {
   requestAnimationFrame(() => {
-    panel.scrollTop = panel.scrollHeight;
+    container.scrollTop = container.scrollHeight;
   });
 }
 
@@ -243,16 +205,16 @@ function formatTime(timestamp) {
   if (diff < 60000) return "刚刚";
   if (diff < 3600000) return `${Math.floor(diff / 60000)}分钟前`;
 
-  const hour = date.getHours().toString().padStart(2, "0");
-  const minute = date.getMinutes().toString().padStart(2, "0");
+  const h = date.getHours().toString().padStart(2, "0");
+  const m = date.getMinutes().toString().padStart(2, "0");
 
   if (date.toDateString() === now.toDateString()) {
-    return `${hour}:${minute}`;
+    return `${h}:${m}`;
   }
 
   const month = (date.getMonth() + 1).toString().padStart(2, "0");
   const day = date.getDate().toString().padStart(2, "0");
-  return `${month}/${day} ${hour}:${minute}`;
+  return `${month}/${day} ${h}:${m}`;
 }
 
 function escapeHtml(text) {
@@ -263,42 +225,5 @@ function escapeHtml(text) {
 
 function truncate(text, max) {
   if (!text || text.length <= max) return text || "";
-  return text.slice(0, max - 1) + "...";
-}
-
-function applyAgentStates(elements, run) {
-  const status = run?.status || "";
-  const isFailed = status === RunStatus.FAILED;
-
-  if (isFailed) {
-    elements.codexState.textContent = "Codex Failed";
-    elements.copilotState.textContent = "Copilot Failed";
-    return;
-  }
-
-  if (status.includes("CODEX")) {
-    elements.codexState.textContent = "Codex Thinking";
-    elements.copilotState.textContent = "Copilot Waiting";
-  } else if (status.includes("COPILOT")) {
-    elements.codexState.textContent = "Codex Done";
-    elements.copilotState.textContent = "Copilot Thinking";
-  } else if (status === RunStatus.COMPLETED) {
-    elements.codexState.textContent = "Codex Done";
-    elements.copilotState.textContent = "Copilot Done";
-  } else {
-    elements.codexState.textContent = "Codex Idle";
-    elements.copilotState.textContent = "Copilot Idle";
-  }
-}
-
-function clearTimeline(elements) {
-  elements.timeline.dispatch.classList.remove("active", "done");
-  elements.timeline.review.classList.remove("active", "done");
-  elements.timeline.decision.classList.remove("active", "done");
-}
-
-export function getErrorMessage(error, fallback = "未知错误") {
-  if (error instanceof Error && error.message) return error.message;
-  if (typeof error?.message === "string" && error.message.trim()) return error.message;
-  return fallback;
+  return text.slice(0, max) + "...";
 }
