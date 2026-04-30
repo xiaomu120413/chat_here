@@ -1,10 +1,11 @@
-# Tauri Demo
+# Chat Here
 
-这是一个最小的 Tauri 示例：
+一个基于 Tauri 的桌面聊天应用。
+
+## 技术栈
 
 - 前端：原生 HTML + CSS + JS
-- 后端：Rust
-- 能力：前端通过 `invoke("greet")` 调用 Rust 命令
+- 后端：Rust + Tauri
 
 ## 运行
 
@@ -21,9 +22,8 @@ npm install
 npm run dev
 ```
 
-其中：
+## 构建
 
-- `npm run dev` 会先启动 Vite，再由 Tauri 打开桌面窗口
-- `npm run build` 会构建前端并打包桌面应用
-
-如果你想把它改成 Vue、React 或者接入你现有项目，我可以继续直接改。
+```powershell
+npm run build
+```
