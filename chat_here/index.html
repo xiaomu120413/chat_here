@@ -34,25 +34,25 @@
       <section class="chat-area" id="chat-area">
         <header class="chat-header">
           <span class="header-title" id="header-title">Chat Here</span>
-          <div class="header-right">
-            <button class="header-btn" id="show-config">⚙</button>
-          </div>
         </header>
 
         <div class="chat-messages" id="chat-messages"></div>
 
         <footer class="chat-input">
-          <div class="config-panel hidden" id="config-panel">
-            <select id="model-input"></select>
-            <select id="copilot-model-input"></select>
-            <input id="round-input" type="number" min="1" max="5" value="1" />
-            <button id="codex-auth-btn">Codex认证</button>
-            <button id="copilot-auth-btn">Copilot认证</button>
-            <span id="provider-health"></span>
-          </div>
           <div class="input-box">
             <textarea id="message-input" placeholder="发送消息..." rows="1"></textarea>
             <button class="send-btn" id="send-btn">发送</button>
+          </div>
+          <div class="config-row">
+            <button id="show-config">⚙</button>
+            <span id="provider-health"></span>
+            <div class="config-panel hidden" id="config-panel">
+              <select id="model-input"></select>
+              <select id="copilot-model-input"></select>
+              <input id="round-input" type="number" min="1" max="5" value="1" />
+              <button id="codex-auth-btn">Codex认证</button>
+              <button id="copilot-auth-btn">Copilot认证</button>
+            </div>
           </div>
         </footer>
       </section>

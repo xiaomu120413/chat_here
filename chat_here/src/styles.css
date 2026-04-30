@@ -168,33 +168,24 @@ body { height: 100vh; overflow: hidden; background: var(--chat-bg); }
 }
 
 .chat-header {
-  padding: 16px 20px;
+  padding: 12px 20px;
   background: var(--bg-white);
   border-bottom: 1px solid var(--border);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
 }
 
-.header-title { font-size: 16px; font-weight: 600; color: var(--text-dark); }
-
-.header-btn {
-  padding: 8px 12px;
-  border-radius: 6px;
-  border: none;
-  background: transparent;
-  color: var(--text-gray);
-  cursor: pointer;
+.header-title {
+  font-size: 15px;
+  color: var(--text-dark);
 }
 
 .chat-messages {
   flex: 1;
   overflow-y: auto;
-  padding: 20px;
+  padding: 16px 20px;
 }
 
 .message-wrapper {
-  margin-bottom: 16px;
+  margin-bottom: 12px;
   display: flex;
   gap: 10px;
 }
@@ -202,10 +193,10 @@ body { height: 100vh; overflow: hidden; background: var(--chat-bg); }
 .message-wrapper.self { flex-direction: row-reverse; }
 
 .message-avatar {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   border-radius: 6px;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-white);
   display: flex;
@@ -219,10 +210,10 @@ body { height: 100vh; overflow: hidden; background: var(--chat-bg); }
 .message-avatar.gateway { background: var(--gray); }
 
 .message-content {
-  padding: 10px 14px;
-  border-radius: 8px;
-  max-width: 60%;
-  font-size: 14px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  max-width: 70%;
+  font-size: 13px;
   line-height: 1.5;
 }
 
@@ -230,14 +221,30 @@ body { height: 100vh; overflow: hidden; background: var(--chat-bg); }
 .message-wrapper.self .message-content { background: var(--bubble-self); }
 
 .chat-input {
-  padding: 12px 20px;
+  padding: 12px 16px;
   background: var(--bg-white);
+  border-top: 1px solid var(--border);
+}
+
+.config-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.config-row button {
+  padding: 4px 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-gray);
+  cursor: pointer;
 }
 
 .config-panel {
-  margin-bottom: 12px;
   display: flex;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
 }
 
@@ -245,18 +252,18 @@ body { height: 100vh; overflow: hidden; background: var(--chat-bg); }
 
 .config-panel select,
 .config-panel input {
-  padding: 6px 10px;
+  padding: 4px 8px;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  font-size: 13px;
+  border-radius: 4px;
+  font-size: 12px;
 }
 
 .config-panel button {
-  padding: 6px 12px;
+  padding: 4px 8px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 4px;
   background: var(--bg-white);
-  font-size: 13px;
+  font-size: 12px;
   cursor: pointer;
 }
 

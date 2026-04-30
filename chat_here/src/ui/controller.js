@@ -65,7 +65,6 @@ export function initGatewayController() {
   document.getElementById("create-confirm").onclick = () => createGroup(el);
 
   document.getElementById("show-config").onclick = () => el.configPanel.classList.toggle("hidden");
-  document.getElementById("detail-close").onclick = () => el.detailPanel.classList.add("hidden");
   el.dissolveBtn.onclick = () => { if (currentSession) deleteSession(currentSession); };
 
   document.getElementById("codex-auth-btn").onclick = () => startAuth(AuthAgent.CODEX);
@@ -85,6 +84,7 @@ function renderWelcome(el) {
   el.headerTitle.textContent = "Chat Here";
   el.chatMessages.innerHTML = `<div class="message-wrapper"><div class="message-avatar gateway">G</div><div class="message-content">欢迎！点击左侧联系人开始私聊，或点击"+"创建群聊</div></div>`;
   el.detailPanel.classList.add("hidden");
+  el.progressSection.style.display = "none";
   renderSessions();
 }
 
@@ -157,7 +157,15 @@ function switchSession(id) {
 
 function deleteSession(id) {
   sessions = sessions.filter(s => s.id !== id);
-  if (currentSession === id) { currentSession = null; renderWelcome({ headerTitle: document.getElementById("header-title"), chatMessages: document.getElementById("chat-messages"), detailPanel: document.getElementById("detail-panel") }); }
+  if (currentSession === id) {
+    currentSession = null;
+    renderWelcome({
+      headerTitle: document.getElementById("header-title"),
+      chatMessages: document.getElementById("chat-messages"),
+      detailPanel: document.getElementById("detail-panel"),
+      progressSection: document.getElementById("progress-section")
+    });
+  }
   renderSessions();
 }
 
