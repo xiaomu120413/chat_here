@@ -128,6 +128,13 @@ function initElements() {
     loadHistoryRun(item.dataset.id);
   });
 
+  elements.memberList.addEventListener("click", (e) => {
+    const item = e.target.closest(".member-item");
+    if (!item) return;
+    const agentId = item.dataset.id;
+    if (agentId) createPrivateChat(agentId);
+  });
+
   renderEmptyState(elements);
 }
 
@@ -160,32 +167,10 @@ function renderEmptyState(elements) {
       <div class="message-avatar gateway">G</div>
       <div class="message-content">
         <div class="message-author">Gateway</div>
-        <div class="message-text">欢迎来到 Chat Here！点击左上角"+"创建群聊，或点击联系人私聊</div>
+        <div class="message-text">欢迎来到 Chat Here！点击左上角"+"创建群聊，或点击右侧联系人私聊</div>
       </div>
     </div>
   `;
-  elements.memberList.innerHTML = `
-    <div class="member-item" data-id="codex">
-      <div class="member-avatar codex">C</div>
-      <div class="member-info">
-        <div class="member-name">Codex</div>
-        <div class="member-role">Primary builder</div>
-      </div>
-    </div>
-    <div class="member-item" data-id="copilot">
-      <div class="member-avatar copilot">P</div>
-      <div class="member-info">
-        <div class="member-name">Copilot</div>
-        <div class="member-role">Counterpoint reviewer</div>
-      </div>
-    </div>
-  `;
-  
-  elements.memberList.querySelectorAll(".member-item").forEach(item => {
-    item.addEventListener("click", () => {
-      createPrivateChat(item.dataset.id);
-    });
-  });
 
   const dissolveBtn = document.getElementById("dissolve-btn");
   if (dissolveBtn) dissolveBtn.style.display = "none";
