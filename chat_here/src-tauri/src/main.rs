@@ -446,9 +446,9 @@ fn main() {
         .setup(|app| {
             use tauri::menu::{Menu, MenuItem};
             
-            let show_item = MenuItem::with_id(app, "show", "显示窗口")?;
-            let hide_item = MenuItem::with_id(app, "hide", "隐藏窗口")?;
-            let quit_item = MenuItem::with_id(app, "quit", "退出")?;
+            let show_item = MenuItem::with_id(app, "show", "显示窗口", true, None::<&str>)?;
+            let hide_item = MenuItem::with_id(app, "hide", "隐藏窗口", true, None::<&str>)?;
+            let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
             
             let menu = Menu::with_items(app, &[&show_item, &hide_item, &quit_item])?;
             
