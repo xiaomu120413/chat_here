@@ -444,6 +444,7 @@ fn read_and_cleanup_output_file(path: &std::path::Path) -> Option<String> {
 fn main() {
     tauri::Builder::default()
         .setup(|app| {
+            use tauri::Manager;
             use tauri::menu::{Menu, MenuItem};
             use tauri::tray::TrayIconBuilder;
             
