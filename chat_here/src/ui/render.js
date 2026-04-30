@@ -54,8 +54,9 @@ function createSessionItem(session, currentId) {
   item.className = `session-item ${session.id === currentId ? "active" : ""}`;
   item.dataset.id = session.id;
 
-  const avatarClass = session.type === "group" ? "group" : session.member;
-  const avatarText = session.type === "group" ? "群" : AVATAR_TEXT[session.member];
+  const memberKey = session.type === "private" ? session.agent : session.member;
+  const avatarClass = session.type === "group" ? "group" : memberKey;
+  const avatarText = session.type === "group" ? "群" : AVATAR_TEXT[memberKey];
 
   item.innerHTML = `
     <div class="session-avatar ${avatarClass}">${avatarText}</div>

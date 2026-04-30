@@ -190,7 +190,7 @@ function renderEmptyState(elements) {
   const dissolveBtn = document.getElementById("dissolve-btn");
   if (dissolveBtn) dissolveBtn.style.display = "none";
 
-  elements.detailPanel.classList.add("hidden");
+  elements.detailPanel.classList.remove("hidden");
   renderSessionList(sessions, currentSession);
 }
 
