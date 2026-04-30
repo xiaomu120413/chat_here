@@ -2,556 +2,259 @@ import { startRun } from "../gateway/orchestrator/index.js";
 import { ProviderId } from "../gateway/adapters/config.js";
 import { createTauriOpenAIHealthClient, normalizeHealthResult } from "../gateway/adapters/tauriOpenAIHealth.js";
 import { AuthAgent, createTauriAuthBroker } from "../gateway/auth/tauriAuthBroker.js";
-import {
-  CODEX_MODELS,
-  COPILOT_MODELS,
-  DEFAULT_CODEX_MODEL,
-  DEFAULT_COPILOT_MODEL,
-} from "../gateway/models.js";
+import { CODEX_MODELS, COPILOT_MODELS, DEFAULT_CODEX_MODEL, DEFAULT_COPILOT_MODEL } from "../gateway/models.js";
 import { createLocalStorageStore } from "../gateway/store/localStorageStore.js";
-import { renderMessages, renderSessionList, renderMemberList, renderHistory, updateProgress, scrollToBottom } from "./render.js";
 import { invoke } from "@tauri-apps/api/core";
 
 const store = createLocalStorageStore();
 const healthClient = createTauriOpenAIHealthClient();
 const authBroker = createTauriAuthBroker();
 
-let sessions = [];
-let currentSession = null;
-let healthState = { ready: false, pending: true, message: "检查认证..." };
-
 const AGENTS = {
-  codex: { name: "Codex", role: "Primary builder", model: DEFAULT_CODEX_MODEL },
-  copilot: { name: "Copilot", role: "Counterpoint reviewer", model: DEFAULT_COPILOT_MODEL },
+  codex: { name: "Codex", model: DEFAULT_CODEX_MODEL },
+  copilot: { name: "Copilot", model: DEFAULT_COPILOT_MODEL },
 };
 
-export function initGatewayController() {
-  initElements();
-  checkHealth();
-  loadHistory();
-}
+let sessions = [];
+let currentSession = null;
+let healthState = { ready: false };
 
-function initElements() {
-  const elements = {
+export function initGatewayController() {
+  const el = {
     sessionList: document.getElementById("session-list"),
-    memberList: document.getElementById("member-list"),
-    historyList: document.getElementById("history-list"),
+    contactsList: document.getElementById("contacts-list"),
     chatMessages: document.getElementById("chat-messages"),
     headerTitle: document.getElementById("header-title"),
-    headerCount: document.getElementById("header-count"),
     messageInput: document.getElementById("message-input"),
     sendBtn: document.getElementById("send-btn"),
     detailPanel: document.getElementById("detail-panel"),
-    configPanel: document.getElementById("config-panel"),
-    createBtn: document.getElementById("create-btn"),
-    showDetail: document.getElementById("show-detail"),
-    showConfig: document.getElementById("show-config"),
-    detailClose: document.getElementById("detail-close"),
-    configClose: document.getElementById("config-close"),
+    memberInfoBox: document.getElementById("member-info-box"),
     dissolveBtn: document.getElementById("dissolve-btn"),
-    sessionInfoSection: document.getElementById("session-info-section"),
-    sessionInfoBox: document.getElementById("session-info-box"),
+    historyList: document.getElementById("history-list"),
+    summaryBox: document.getElementById("summary-box"),
+    progressSection: document.getElementById("progress-section"),
+    configPanel: document.getElementById("config-panel"),
     modalOverlay: document.getElementById("modal-overlay"),
-    modalClose: document.getElementById("modal-close"),
-    createCancel: document.getElementById("create-cancel"),
-    createConfirm: document.getElementById("create-confirm"),
     groupNameInput: document.getElementById("group-name-input"),
     modelInput: document.getElementById("model-input"),
     copilotModelInput: document.getElementById("copilot-model-input"),
     roundInput: document.getElementById("round-input"),
-    codexAuthBtn: document.getElementById("codex-auth-btn"),
-    copilotAuthBtn: document.getElementById("copilot-auth-btn"),
-    providerHealth: document.getElementById("provider-health"),
-    summaryBox: document.getElementById("summary-box"),
   };
 
-  renderModelOptions(elements.modelInput, CODEX_MODELS, DEFAULT_CODEX_MODEL);
-  renderModelOptions(elements.copilotModelInput, COPILOT_MODELS, DEFAULT_COPILOT_MODEL);
+  el.modelInput.innerHTML = CODEX_MODELS.map(m => `<option value="${m.id}" ${m.id === DEFAULT_CODEX_MODEL ? 'selected' : ''}>${m.label}</option>`).join('');
+  el.copilotModelInput.innerHTML = COPILOT_MODELS.map(m => `<option value="${m.id}" ${m.id === DEFAULT_COPILOT_MODEL ? 'selected' : ''}>${m.label}</option>`).join('');
 
-  elements.sessionList.addEventListener("click", (e) => {
-    const deleteBtn = e.target.closest(".session-delete");
-    if (deleteBtn) {
-      const item = deleteBtn.closest(".session-item");
-      if (item) deleteSession(item.dataset.id);
-      return;
-    }
-    
+  el.sessionList.onclick = e => {
+    const del = e.target.closest(".session-delete");
+    if (del) { deleteSession(del.closest(".session-item").dataset.id); return; }
     const item = e.target.closest(".session-item");
-    if (!item) return;
-    switchSession(item.dataset.id);
-  });
+    if (item) switchSession(item.dataset.id);
+  };
 
-  elements.memberList.addEventListener("click", (e) => {
-    const item = e.target.closest(".member-item");
-    if (!item) return;
-    const agentId = item.dataset.id;
-    if (agentId) createPrivateChat(agentId);
-  });
+  el.contactsList.onclick = e => {
+    const item = e.target.closest(".contact-item");
+    if (item) createPrivateChat(item.dataset.id);
+  };
 
-  elements.sendBtn.addEventListener("click", () => sendMessage(elements));
-  elements.messageInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage(elements);
-    }
-  });
+  el.sendBtn.onclick = () => sendMessage(el);
+  el.messageInput.onkeydown = e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(el); } };
 
-  elements.createBtn.addEventListener("click", () => {
-    elements.modalOverlay.classList.remove("hidden");
-    elements.groupNameInput.value = "";
-    elements.groupNameInput.focus();
-  });
+  document.getElementById("create-btn").onclick = () => el.modalOverlay.classList.remove("hidden");
+  document.getElementById("modal-close").onclick = () => el.modalOverlay.classList.add("hidden");
+  document.getElementById("create-cancel").onclick = () => el.modalOverlay.classList.add("hidden");
+  document.getElementById("create-confirm").onclick = () => createGroup(el);
 
-  elements.modalClose.addEventListener("click", closeModal);
-  elements.createCancel.addEventListener("click", closeModal);
-  elements.createConfirm.addEventListener("click", () => createGroup(elements));
+  document.getElementById("show-config").onclick = () => el.configPanel.classList.toggle("hidden");
+  document.getElementById("detail-close").onclick = () => el.detailPanel.classList.add("hidden");
+  el.dissolveBtn.onclick = () => { if (currentSession) deleteSession(currentSession); };
 
-  elements.showDetail.addEventListener("click", () => {
-    elements.detailPanel.classList.toggle("hidden");
-  });
+  document.getElementById("codex-auth-btn").onclick = () => startAuth(AuthAgent.CODEX);
+  document.getElementById("copilot-auth-btn").onclick = () => startAuth(AuthAgent.COPILOT);
 
-  elements.showConfig.addEventListener("click", () => {
-    elements.configPanel.classList.toggle("show");
-  });
-
-  elements.detailClose.addEventListener("click", () => {
-    elements.detailPanel.classList.add("hidden");
-  });
-
-  elements.configClose.addEventListener("click", () => {
-    elements.configPanel.classList.remove("show");
-  });
-
-  elements.dissolveBtn.addEventListener("click", () => {
-    if (currentSession) {
-      deleteSession(currentSession);
-    }
-  });
-
-  elements.codexAuthBtn.addEventListener("click", () => startAuth(AuthAgent.CODEX));
-  elements.copilotAuthBtn.addEventListener("click", () => startAuth(AuthAgent.COPILOT));
-
-  elements.historyList.addEventListener("click", (e) => {
+  el.historyList.onclick = e => {
     const item = e.target.closest(".history-item");
-    if (!item) return;
-    loadHistoryRun(item.dataset.id);
-  });
+    if (item) loadHistoryRun(item.dataset.id, el);
+  };
 
-  renderEmptyState(elements);
+  checkHealth();
+  loadHistory(el);
+  renderWelcome(el);
 }
 
-function closeModal() {
-  document.getElementById("modal-overlay").classList.add("hidden");
+function renderWelcome(el) {
+  el.headerTitle.textContent = "Chat Here";
+  el.chatMessages.innerHTML = `<div class="message-wrapper"><div class="message-avatar gateway">G</div><div class="message-content">欢迎！点击左侧联系人开始私聊，或点击"+"创建群聊</div></div>`;
+  el.detailPanel.classList.add("hidden");
+  renderSessions();
 }
 
-function deleteSession(sessionId) {
-  sessions = sessions.filter(s => s.id !== sessionId);
-  
-  if (currentSession === sessionId) {
-    currentSession = null;
-    renderEmptyState({
-      headerTitle: document.getElementById("header-title"),
-      headerCount: document.getElementById("header-count"),
-      chatMessages: document.getElementById("chat-messages"),
-      memberList: document.getElementById("member-list"),
-      detailPanel: document.getElementById("detail-panel"),
-    });
-  }
-  
-  renderSessionList(sessions, currentSession);
-}
-
-function renderEmptyState(elements) {
-  elements.headerTitle.textContent = "Chat Here";
-  elements.headerCount.textContent = "";
-  elements.chatMessages.innerHTML = `
-    <div class="message-wrapper">
-      <div class="message-avatar gateway">G</div>
-      <div class="message-content">
-        <div class="message-author">Gateway</div>
-        <div class="message-text">欢迎来到 Chat Here！点击左上角"+"创建群聊，或点击右侧联系人私聊</div>
-      </div>
+function renderSessions() {
+  const list = document.getElementById("session-list");
+  list.innerHTML = sessions.map(s => `
+    <div class="session-item ${s.id === currentSession ? 'active' : ''}" data-id="${s.id}">
+      <div class="session-avatar ${s.type === 'group' ? 'group' : s.agent}">${s.type === 'group' ? '群' : s.agent.charAt(0).toUpperCase()}</div>
+      <span class="session-name">${s.name}</span>
+      <button class="session-delete">×</button>
     </div>
-  `;
-
-  elements.sessionInfoSection.style.display = "none";
-  elements.dissolveBtn.style.display = "none";
-
-  elements.detailPanel.classList.remove("hidden");
-  renderSessionList(sessions, currentSession);
+  `).join('');
 }
 
 function createPrivateChat(agentId) {
   const existing = sessions.find(s => s.type === "private" && s.agent === agentId);
-  if (existing) {
-    switchSession(existing.id);
-    return;
-  }
-
+  if (existing) { switchSession(existing.id); return; }
+  
   const agent = AGENTS[agentId];
-  const chat = {
-    id: `private-${agentId}-${Date.now()}`,
-    type: "private",
-    name: agent.name,
-    agent: agentId,
-    model: agent.model,
-    messages: [],
-    lastMessage: "开始私聊",
-    lastTime: Date.now(),
-  };
-
-  sessions.unshift(chat);
-  renderSessionList(sessions, currentSession);
-  switchSession(chat.id);
+  sessions.unshift({ id: `p-${agentId}-${Date.now()}`, type: "private", name: agent.name, agent: agentId, model: agent.model, messages: [] });
+  renderSessions();
+  switchSession(sessions[0].id);
 }
 
-function createGroup(elements) {
-  const name = elements.groupNameInput.value.trim();
-  if (!name) {
-    elements.groupNameInput.focus();
-    return;
-  }
-
-  const checkboxes = document.querySelectorAll("#member-checkbox-list input:checked");
-  const selectedAgents = Array.from(checkboxes).map(cb => cb.value);
-
-  if (selectedAgents.length < 1) {
-    alert("请至少选择1个成员");
-    return;
-  }
-
-  const group = {
-    id: `group-${Date.now()}`,
-    type: "group",
-    name,
-    agents: selectedAgents,
-    model: elements.modelInput.value,
-    copilotModel: elements.copilotModelInput.value,
-    rounds: parseInt(elements.roundInput.value) || 1,
-    messages: [],
-    lastMessage: "群聊已创建",
-    lastTime: Date.now(),
-  };
-
-  sessions.unshift(group);
-  renderSessionList(sessions, currentSession);
-  closeModal();
-  switchSession(group.id);
+function createGroup(el) {
+  const name = el.groupNameInput.value.trim();
+  if (!name) return;
+  
+  const agents = [...document.querySelectorAll(".member-checkbox-list input:checked")].map(c => c.value);
+  sessions.unshift({ id: `g-${Date.now()}`, type: "group", name, agents, model: el.modelInput.value, copilotModel: el.copilotModelInput.value, rounds: +el.roundInput.value || 1, messages: [] });
+  
+  el.modalOverlay.classList.add("hidden");
+  renderSessions();
+  switchSession(sessions[0].id);
 }
 
-function switchSession(sessionId) {
-  currentSession = sessionId;
-  const session = sessions.find(s => s.id === sessionId);
-  if (!session) return;
+function switchSession(id) {
+  currentSession = id;
+  const s = sessions.find(x => x.id === id);
+  if (!s) return;
 
-  const elements = {
+  const el = {
     headerTitle: document.getElementById("header-title"),
-    headerCount: document.getElementById("header-count"),
     chatMessages: document.getElementById("chat-messages"),
-    sessionInfoSection: document.getElementById("session-info-section"),
-    sessionInfoBox: document.getElementById("session-info-box"),
+    detailPanel: document.getElementById("detail-panel"),
+    memberInfoBox: document.getElementById("member-info-box"),
     dissolveBtn: document.getElementById("dissolve-btn"),
+    progressSection: document.getElementById("progress-section"),
   };
 
-  elements.headerTitle.textContent = session.name;
-  elements.headerCount.textContent = session.type === "group" 
-    ? `${session.agents.length + 1}人` 
-    : "私聊";
-
-  elements.dissolveBtn.textContent = session.type === "group" ? "解散群聊" : "删除私聊";
-  elements.dissolveBtn.style.display = "block";
-  elements.sessionInfoSection.style.display = "block";
-
-  if (session.type === "private") {
-    const agent = AGENTS[session.agent];
-    elements.sessionInfoBox.innerHTML = `
-      <div class="session-member">
-        <div class="member-avatar me">M</div>
-        <span class="member-name">Me</span>
-      </div>
-      <div class="session-member">
-        <div class="member-avatar ${session.agent}">${session.agent.charAt(0).toUpperCase()}</div>
-        <span class="member-name">${agent.name}</span>
-      </div>
-    `;
-  } else {
-    let html = `<div class="session-member"><div class="member-avatar me">M</div><span class="member-name">Me</span></div>`;
-    session.agents.forEach(agentId => {
-      const agent = AGENTS[agentId];
-      html += `<div class="session-member"><div class="member-avatar ${agentId}">${agentId.charAt(0).toUpperCase()}</div><span class="member-name">${agent.name}</span></div>`;
-    });
-    elements.sessionInfoBox.innerHTML = html;
-  }
-
-  renderSessionList(sessions, currentSession);
-  renderMessages(session.messages || []);
+  el.headerTitle.textContent = s.name;
+  el.dissolveBtn.textContent = s.type === "group" ? "解散群聊" : "删除私聊";
   
-  if (!session.messages || session.messages.length === 0) {
-    elements.chatMessages.innerHTML = `
-      <div class="message-wrapper">
-        <div class="message-avatar gateway">G</div>
-        <div class="message-content">
-          <div class="message-author">Gateway</div>
-          <div class="message-text">${session.type === "private" 
-            ? `开始与 ${session.name} 私聊` 
-            : "群聊已创建，发送话题开始讨论"}</div>
-        </div>
-      </div>
-    `;
-  }
-}
-
-async function sendMessage(elements) {
-  const input = elements.messageInput;
-  const text = input.value.trim();
-  if (!text) return;
-
-  const session = sessions.find(s => s.id === currentSession);
-  if (!session) return;
-
-  input.value = "";
-
-  appendMessage(session, "me", text);
-  renderMessages(session.messages);
-  scrollToBottom(elements.chatMessages);
-
-  if (session.type === "private") {
-    await sendPrivateMessage(session, elements);
+  let membersHtml = `<div class="member-row"><div class="message-avatar me">M</div><span>Me</span></div>`;
+  if (s.type === "private") {
+    membersHtml += `<div class="member-row"><div class="message-avatar ${s.agent}">${s.agent.charAt(0).toUpperCase()}</div><span>${AGENTS[s.agent].name}</span></div>`;
+    el.progressSection.style.display = "none";
   } else {
-    await sendGroupMessage(session, elements);
+    s.agents.forEach(a => membersHtml += `<div class="member-row"><div class="message-avatar ${a}">${a.charAt(0).toUpperCase()}</div><span>${AGENTS[a].name}</span></div>`);
+    el.progressSection.style.display = "block";
   }
+  el.memberInfoBox.innerHTML = membersHtml;
+
+  el.chatMessages.innerHTML = s.messages.length ? "" : `<div class="message-wrapper"><div class="message-avatar gateway">G</div><div class="message-content">${s.type === "private" ? `开始与${s.name}私聊` : "群聊已创建，发送话题开始讨论"}</div></div>`;
+  s.messages.forEach(m => el.chatMessages.appendChild(createMsg(m)));
+
+  el.detailPanel.classList.remove("hidden");
+  renderSessions();
 }
 
-async function sendPrivateMessage(session, elements) {
-  if (!healthState.ready) {
-    appendMessage(session, "gateway", `认证未就绪: ${healthState.message}`);
-    renderMessages(session.messages);
-    scrollToBottom(elements.chatMessages);
-    return;
-  }
-
-  elements.sendBtn.disabled = true;
-
-  try {
-    const response = await invoke("chat_with_agent", {
-      request: {
-        agent: session.agent,
-        model: session.model,
-        message: session.messages.map(m => `${m.from}: ${m.content}`).join("\n"),
-      },
-    });
-
-    const replyText = response.output_text || "收到回复";
-    appendMessage(session, session.agent, replyText);
-    renderMessages(session.messages);
-    scrollToBottom(elements.chatMessages);
-  } catch (err) {
-    appendMessage(session, "gateway", `发生错误: ${err}`);
-    renderMessages(session.messages);
-    scrollToBottom(elements.chatMessages);
-  } finally {
-    elements.sendBtn.disabled = false;
-  }
+function deleteSession(id) {
+  sessions = sessions.filter(s => s.id !== id);
+  if (currentSession === id) { currentSession = null; renderWelcome({ headerTitle: document.getElementById("header-title"), chatMessages: document.getElementById("chat-messages"), detailPanel: document.getElementById("detail-panel") }); }
+  renderSessions();
 }
 
-async function sendGroupMessage(session, elements) {
-  if (!healthState.ready) {
-    appendMessage(session, "gateway", `认证未就绪: ${healthState.message}`);
-    renderMessages(session.messages);
-    scrollToBottom(elements.chatMessages);
-    return;
-  }
-
-  const lastUserMessage = session.messages.filter(m => m.from === "me").pop();
-  const prompt = lastUserMessage?.content || "";
-
-  elements.sendBtn.disabled = true;
-  elements.detailPanel.classList.remove("hidden");
-  updateProgress("dispatch", "active", "进行中");
-
-  try {
-    const result = await startRun(prompt, {
-      store,
-      maxRounds: session.rounds,
-      providers: {
-        codex: {
-          provider: ProviderId.TAURI_CODEX,
-          model: session.model,
-        },
-        copilot: {
-          provider: ProviderId.TAURI_COPILOT,
-          model: session.copilotModel,
-        },
-      },
-      onUpdate: (progress) => {
-        syncMessagesFromRun(session, progress.messages);
-        renderMessages(session.messages);
-        scrollToBottom(elements.chatMessages);
-        updateProgressFromRun(progress.run);
-      },
-    });
-
-    syncMessagesFromRun(session, result.messages);
-    renderMessages(session.messages);
-    scrollToBottom(elements.chatMessages);
-    updateProgressFromRun(result.run);
-    
-    document.getElementById("summary-box").textContent = result.decision 
-      ? `${result.decision.summary}\n\n${result.decision.rationale}`
-      : "讨论完成";
-
-    await loadHistory();
-  } catch (err) {
-    appendMessage(session, "gateway", `发生错误: ${err.message}`);
-    renderMessages(session.messages);
-    scrollToBottom(elements.chatMessages);
-    updateProgress("review", "active", "失败");
-  } finally {
-    elements.sendBtn.disabled = false;
-  }
-}
-
-function appendMessage(session, from, content) {
-  session.messages.push({
-    id: `msg-${Date.now()}`,
-    from,
-    content,
-    time: Date.now(),
-  });
-  session.lastMessage = content.slice(0, 30);
-  session.lastTime = Date.now();
-}
-
-function syncMessagesFromRun(session, runMessages) {
-  const existingIds = session.messages.map(m => m.id);
+async function sendMessage(el) {
+  const text = el.messageInput.value.trim();
+  if (!text || !currentSession) return;
   
-  runMessages.forEach(msg => {
-    const id = `run-${msg.createdAt || Date.now()}`;
-    if (!existingIds.includes(id)) {
-      session.messages.push({
-        id,
-        from: msg.source.toLowerCase(),
-        content: msg.content,
-        time: msg.createdAt || Date.now(),
-      });
+  const s = sessions.find(x => x.id === currentSession);
+  el.messageInput.value = "";
+  
+  s.messages.push({ from: "me", content: text, time: Date.now() });
+  el.chatMessages.appendChild(createMsg(s.messages[s.messages.length - 1]));
+  
+  if (s.type === "private") {
+    if (!healthState.ready) { showReply(s, "认证未就绪"); return; }
+    el.sendBtn.disabled = true;
+    try {
+      const res = await invoke("chat_with_agent", { request: { agent: s.agent, model: s.model, message: s.messages.map(m => `${m.from}: ${m.content}`).join("\n") } });
+      showReply(s, res.output_text || "收到回复");
+    } catch (e) { showReply(s, `错误: ${e}`); }
+    el.sendBtn.disabled = false;
+  } else {
+    if (!healthState.ready) { showReply(s, "认证未就绪"); return; }
+    el.sendBtn.disabled = true;
+    setProgress("dispatch", "active");
+    try {
+      const result = await startRun(text, { store, maxRounds: s.rounds, providers: { codex: { provider: ProviderId.TAURI_CODEX, model: s.model }, copilot: { provider: ProviderId.TAURI_COPILOT, model: s.copilotModel } }, onUpdate: p => { syncMsgs(s, p.messages); refreshChat(s); updateProgress(p.run); } });
+      syncMsgs(s, result.messages);
+      refreshChat(s);
+      setProgress("dispatch", "done"); setProgress("review", "done"); setProgress("decision", "done");
+      el.summaryBox.textContent = result.decision ? `${result.decision.summary}\n\n${result.decision.rationale}` : "完成";
+      loadHistory(el);
+    } catch (e) { showReply(s, `错误: ${e.message}`); }
+    el.sendBtn.disabled = false;
+  }
+}
+
+function showReply(s, text) {
+  s.messages.push({ from: s.agent || "gateway", content: text, time: Date.now() });
+  document.getElementById("chat-messages").appendChild(createMsg(s.messages[s.messages.length - 1]));
+}
+
+function syncMsgs(s, msgs) {
+  msgs.forEach(m => {
+    if (!s.messages.find(x => x.time === (m.createdAt || Date.now()))) {
+      s.messages.push({ from: m.source.toLowerCase(), content: m.content, time: m.createdAt || Date.now() });
     }
   });
-  
-  session.lastMessage = runMessages[runMessages.length - 1]?.content?.slice(0, 30) || "讨论中";
-  session.lastTime = Date.now();
 }
 
-function updateProgressFromRun(run) {
-  if (run.status === "COMPLETED") {
-    updateProgress("dispatch", "done", "完成");
-    updateProgress("review", "done", "完成");
-    updateProgress("decision", "done", "完成");
-  } else if (run.status === "FAILED") {
-    updateProgress("review", "active", "失败");
-  } else if (run.currentStep?.includes("CODEX")) {
-    updateProgress("dispatch", "done", "完成");
-    updateProgress("review", "active", "进行中");
-  } else if (run.currentStep?.includes("COPILOT")) {
-    updateProgress("dispatch", "done", "完成");
-    updateProgress("review", "active", "进行中");
-  }
+function refreshChat(s) {
+  const el = document.getElementById("chat-messages");
+  el.innerHTML = "";
+  s.messages.forEach(m => el.appendChild(createMsg(m)));
+}
+
+function createMsg(m) {
+  const div = document.createElement("div");
+  div.className = `message-wrapper ${m.from === "me" ? "self" : ""}`;
+  div.innerHTML = `<div class="message-avatar ${m.from === "me" ? "me" : m.from}">${m.from === "me" ? "M" : m.from.charAt(0).toUpperCase()}</div><div class="message-content">${m.content}</div>`;
+  return div;
+}
+
+function setProgress(id, state) {
+  const el = document.getElementById(`progress-${id}`);
+  el.className = `progress-item ${state}`;
+  el.querySelector(".progress-status").textContent = state === "done" ? "完成" : state === "active" ? "进行中" : "等待";
+}
+
+function updateProgress(run) {
+  if (run.status === "COMPLETED") { setProgress("dispatch", "done"); setProgress("review", "done"); setProgress("decision", "done"); }
+  else if (run.currentStep?.includes("CODEX")) { setProgress("dispatch", "done"); setProgress("review", "active"); }
+  else if (run.currentStep?.includes("COPILOT")) { setProgress("dispatch", "done"); setProgress("review", "active"); }
 }
 
 async function checkHealth() {
-  const el = document.getElementById("provider-health");
-  el.textContent = "检查认证...";
-  
   try {
-    const result = normalizeHealthResult(await healthClient.check());
-    healthState = selectHealth(result);
-    el.textContent = healthState.message;
-    el.style.color = healthState.ready ? "#10b981" : "#ef4444";
-  } catch (err) {
-    healthState = { ready: false, message: err.message };
-    el.textContent = err.message;
-    el.style.color = "#ef4444";
-  }
+    const r = normalizeHealthResult(await healthClient.check());
+    healthState.ready = r.agents.codex.ready && r.agents.copilot.ready;
+    document.getElementById("provider-health").textContent = healthState.ready ? "认证就绪" : "未认证";
+  } catch (e) { document.getElementById("provider-health").textContent = "检查失败"; }
 }
 
-async function startAuth(agent) {
-  try {
-    await authBroker.start(agent);
-    await checkHealth();
-  } catch (err) {
-    document.getElementById("provider-health").textContent = err.message;
-  }
-}
+async function startAuth(agent) { await authBroker.start(agent); checkHealth(); }
 
-function selectHealth(result) {
-  const checks = [
-    { name: "Codex", ...result.agents.codex },
-    { name: "Copilot", ...result.agents.copilot },
-  ];
-
-  const missing = checks.filter(c => !c.ready);
-  if (missing.length > 0) {
-    return {
-      ready: false,
-      message: missing.map(c => `${c.name}: ${c.message}`).join("; "),
-    };
-  }
-
-  return { ready: true, message: "认证就绪" };
-}
-
-async function loadHistory() {
+async function loadHistory(el) {
   const runs = await store.listRuns();
-  const snapshots = await Promise.all(runs.slice(0, 10).map(r => store.getRun(r.id)));
-  renderHistory(snapshots.filter(Boolean));
+  const snaps = await Promise.all(runs.slice(0, 10).map(r => store.getRun(r.id)));
+  el.historyList.innerHTML = snaps.filter(Boolean).map(s => `<div class="history-item" data-id="${s.run.id}">${truncate(s.task?.prompt || s.run.id, 30)}</div>`).join("") || "<div class='history-item'>暂无历史</div>";
 }
 
-async function loadHistoryRun(runId) {
-  const snapshot = await store.getRun(runId);
-  if (!snapshot) return;
-
-  const container = document.getElementById("chat-messages");
-  container.innerHTML = "";
-
-  snapshot.messages?.forEach(msg => {
-    const row = document.createElement("div");
-    const from = msg.source?.toLowerCase() || "gateway";
-    const isSelf = from === "user";
-    row.className = `message-wrapper ${isSelf ? "self" : ""}`;
-    
-    row.innerHTML = `
-      <div class="message-avatar ${from}">${from.charAt(0).toUpperCase()}</div>
-      <div class="message-content">
-        ${!isSelf ? `<div class="message-author">${from}</div>` : ""}
-        <div class="message-text">${msg.content}</div>
-        <div class="message-time">${formatTime(msg.createdAt)}</div>
-      </div>
-    `;
-    
-    container.appendChild(row);
-  });
-
-  scrollToBottom(container);
-  
-  document.getElementById("summary-box").textContent = snapshot.decision
-    ? `${snapshot.decision.summary}\n\n${snapshot.decision.rationale}`
-    : "历史记录";
+async function loadHistoryRun(id, el) {
+  const snap = await store.getRun(id);
+  if (!snap) return;
+  el.chatMessages.innerHTML = "";
+  snap.messages?.forEach(m => el.chatMessages.appendChild(createMsg({ from: m.source.toLowerCase(), content: m.content })));
+  el.summaryBox.textContent = snap.decision ? `${snap.decision.summary}\n\n${snap.decision.rationale}` : "历史记录";
 }
 
-function renderModelOptions(select, models, selected) {
-  select.innerHTML = "";
-  models.forEach(model => {
-    const opt = document.createElement("option");
-    opt.value = model.id;
-    opt.textContent = model.label;
-    opt.selected = model.id === selected;
-    select.appendChild(opt);
-  });
-}
-
-function formatTime(timestamp) {
-  if (!timestamp) return "刚刚";
-  const date = new Date(timestamp);
-  const h = date.getHours().toString().padStart(2, "0");
-  const m = date.getMinutes().toString().padStart(2, "0");
-  return `${h}:${m}`;
-}
+function truncate(t, n) { return t?.length > n ? t.slice(0, n) + "..." : t || ""; }
