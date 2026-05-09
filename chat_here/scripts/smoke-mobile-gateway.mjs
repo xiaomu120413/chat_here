@@ -21,6 +21,18 @@ try {
   const unauthorized = await fetch(`${baseUrl}/api/threads`);
   assert.equal(unauthorized.status, 401);
 
+  const preflight = await fetch(`${baseUrl}/api/threads`, {
+    method: "OPTIONS",
+    headers: {
+      origin: "http://127.0.0.1:1421",
+      "access-control-request-method": "POST",
+      "access-control-request-headers": "authorization, content-type",
+    },
+  });
+  assert.equal(preflight.status, 204);
+  assert.equal(preflight.headers.get("access-control-allow-origin"), "*");
+  assert.match(preflight.headers.get("access-control-allow-headers") ?? "", /authorization/);
+
   const created = await postJson(baseUrl, "/api/threads", token, {
     title: "Mobile smoke room",
     createdBy: { type: "human", id: "mobile-smoke", name: "Mobile Smoke" },
