@@ -7,8 +7,12 @@
     "predev": "node scripts/clear-dev-port.mjs",
     "dev": "tauri dev",
     "build": "tauri build",
-    "frontend:dev": "vite --host 0.0.0.0 --port 1421 --strictPort",
+    "frontend:dev": "vite",
     "frontend:build": "vite build",
+    "ios:init": "tauri ios init",
+    "ios:dev": "tauri ios dev --host",
+    "ios:open": "tauri ios dev --open --host",
+    "ios:build": "tauri ios build",
     "smoke:cli": "node scripts/smoke-cli.mjs",
     "smoke:mobile": "node scripts/smoke-mobile-gateway.mjs",
     "test": "node --test src/gateway/tests/*.test.js"
