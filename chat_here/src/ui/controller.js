@@ -20,6 +20,7 @@ import {
   scrollToBottom,
   updateProgress,
 } from "./render.js";
+import { maskSecret } from "./gatewaySecurity.js";
 import { restoreSessionState, serializeSessionState } from "./sessionPersistence.js";
 
 const store = createLocalStorageStore();
@@ -692,8 +693,8 @@ function renderGatewayStatus(status) {
     mobileEntryUrl = buildMobileEntryUrl(status.lanUrl, status.token);
     lines.push(`手机入口：${mobileEntryUrl}`);
   }
-  lines.push(`Token：${status.token}`);
-  lines.push("说明：手机访问 API 时需要 Authorization: Bearer <Token>。");
+  lines.push(`Token：${maskSecret(status.token)}`);
+  lines.push("说明：完整 token 不在界面明文展示，请使用复制手机入口。");
   elements.gatewayStatusBox.textContent = lines.join("\n");
   elements.gatewayCopyMobileBtn.disabled = !mobileEntryUrl;
   elements.gatewayCopyMobileBtn.dataset.mobileEntryUrl = mobileEntryUrl;
