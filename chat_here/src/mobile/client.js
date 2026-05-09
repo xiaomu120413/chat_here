@@ -6,6 +6,7 @@ import {
   getMobileSendDisabledReason,
   getThreadPreview,
 } from "./threadViewModel.js";
+import { createSanitizedMobileUrl } from "./urlSecurity.js";
 
 const STORAGE_KEY = "chat_here_mobile_gateway";
 
@@ -63,8 +64,16 @@ function collectElements() {
 function restoreConfig() {
   const saved = readSavedConfig();
   const query = readQueryConfig();
-  elements.gatewayUrl.value = query.baseUrl || saved.baseUrl || defaultGatewayUrl();
-  elements.gatewayToken.value = query.token || saved.token || "";
+  const config = {
+    baseUrl: query.baseUrl || saved.baseUrl || defaultGatewayUrl(),
+    token: query.token || saved.token || "",
+  };
+  elements.gatewayUrl.value = config.baseUrl;
+  elements.gatewayToken.value = config.token;
+  if (query.token) {
+    saveConfig(config);
+    sanitizeCurrentUrl();
+  }
 }
 
 function bindEvents() {
@@ -388,6 +397,13 @@ function readQueryConfig() {
     baseUrl: params.get("gateway") || params.get("gatewayUrl") || "",
     token: params.get("token") || "",
   };
+}
+
+function sanitizeCurrentUrl() {
+  const nextUrl = createSanitizedMobileUrl(window.location.href);
+  if (nextUrl !== window.location.href) {
+    window.history.replaceState(null, "", nextUrl);
+  }
 }
 
 function saveConfig(config) {
