@@ -440,7 +440,9 @@ async function runPrompt(session, prompt, options = {}) {
   renderApp();
 
   try {
-    await mirrorUserPromptToGateway(session, prompt);
+    if (!options.skipGatewayMirror) {
+      await mirrorUserPromptToGateway(session, prompt);
+    }
     const result = await startRun(prompt, {
       store,
       maxRounds: session.rounds,
@@ -453,7 +455,9 @@ async function runPrompt(session, prompt, options = {}) {
       },
     });
 
-    syncSessionFromSnapshot(session, result);
+    syncSessionFromSnapshot(session, result, {
+      suppressUserPrompt: options.suppressUserPrompt ? prompt : "",
+    });
     await mirrorRunResultToGateway(session, result);
     session.summary = result.decision
       ? [result.decision.summary, result.decision.rationale].filter(Boolean).join("\n\n")
@@ -505,12 +509,17 @@ function ensureDiagnosticSession() {
   return session;
 }
 
-function syncSessionFromSnapshot(session, snapshot) {
+function syncSessionFromSnapshot(session, snapshot, options = {}) {
   session.activeRunId = snapshot.run?.status === "completed" || snapshot.run?.status === "failed" ? "" : snapshot.run?.id || "";
   session.run = snapshot.run ?? null;
+  const snapshotMessages = options.suppressUserPrompt
+    ? snapshot.messages.filter(
+        (message) => !(message.source === "user" && message.content === options.suppressUserPrompt),
+      )
+    : snapshot.messages;
   session.messages = [
     ...session.baseMessages,
-    ...snapshot.messages.map((message) =>
+    ...snapshotMessages.map((message) =>
       createUiMessage({
         id: message.id,
         source: mapSource(message.source),
@@ -750,6 +759,9 @@ async function syncGatewayThreadToPcSession(threadId) {
       return;
     }
 
+    const autoRunMessage = incoming.find((message) =>
+      shouldAutoRunGatewayMessage(snapshot.messages.find((candidate) => candidate.id === message.id)),
+    );
     for (const message of incoming) {
       session.gatewayMirroredMessageIds.add(message.id);
     }
@@ -758,9 +770,27 @@ async function syncGatewayThreadToPcSession(threadId) {
     session.preview = incoming.at(-1)?.content ?? session.preview;
     session.lastActivityAt = incoming.at(-1)?.createdAt ?? session.lastActivityAt;
     renderApp();
+    if (autoRunMessage && !session.activeRunId) {
+      void runPrompt(session, autoRunMessage.content, {
+        preview: autoRunMessage.content,
+        pendingSummary: "手机端话题已收到，正在派发给 Codex / Copilot。",
+        skipGatewayMirror: true,
+        suppressUserPrompt: true,
+      });
+    }
   } catch (error) {
     appendGatewayNotice(session, `Gateway 实时同步失败：${getErrorMessage(error)}`);
   }
+}
+
+function shouldAutoRunGatewayMessage(message) {
+  if (!message || message.kind !== "user") {
+    return false;
+  }
+  if (message.source?.type !== "human") {
+    return false;
+  }
+  return message.source?.id !== "user";
 }
 
 function gatewayMessageToUiMessage(message) {
