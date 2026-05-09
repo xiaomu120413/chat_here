@@ -1,4 +1,5 @@
 import { startRun } from "../gateway/orchestrator/index.js";
+import { createCancelToken } from "../gateway/orchestrator/runner.js";
 import { ProviderId } from "../gateway/adapters/config.js";
 import { createTauriOpenAIHealthClient, normalizeHealthResult } from "../gateway/adapters/tauriOpenAIHealth.js";
 import { AuthAgent, createTauriAuthBroker } from "../gateway/auth/tauriAuthBroker.js";
@@ -90,6 +91,7 @@ function collectElements() {
     railSelfTest: document.getElementById("rail-self-test"),
     memberInfoBox: document.getElementById("member-info-box"),
     summaryBox: document.getElementById("summary-box"),
+    cancelRunBtn: document.getElementById("cancel-run-btn"),
     progressSection: document.getElementById("progress-section"),
     historyList: document.getElementById("history-list"),
     modelInput: document.getElementById("model-input"),
@@ -132,6 +134,7 @@ function bindEvents() {
   document.getElementById("codex-auth-btn").addEventListener("click", () => startAuth(AuthAgent.CODEX));
   document.getElementById("copilot-auth-btn").addEventListener("click", () => startAuth(AuthAgent.COPILOT));
   elements.selfTestBtn.addEventListener("click", runSelfTest);
+  elements.cancelRunBtn.addEventListener("click", cancelCurrentRun);
   elements.historyList.addEventListener("click", handleHistoryClick);
   elements.dissolveBtn.addEventListener("click", deleteCurrentSession);
   elements.toggleInfo.addEventListener("click", () => elements.detailPanel.classList.toggle("open"));
@@ -193,6 +196,7 @@ function createSession(name) {
     run: null,
     summary: "等待新的讨论。",
     activeRunId: "",
+    activeCancelToken: null,
   };
 }
 
@@ -219,6 +223,7 @@ function renderApp() {
   renderMessages(elements.chatMessages, session);
   updateProgress(elements.progressSection, session.run);
   renderHistory(elements.historyList, historyRecords, session.activeRunId);
+  elements.cancelRunBtn.disabled = !session.activeCancelToken || !session.activeRunId;
   scrollToBottom(elements.chatMessages);
   persistSessions();
 }
@@ -440,6 +445,8 @@ async function runPrompt(session, prompt, options = {}) {
 
   elements.sendBtn.disabled = true;
   elements.selfTestBtn.disabled = true;
+  const cancelToken = createCancelToken();
+  session.activeCancelToken = cancelToken;
   session.baseMessages = [...session.messages];
   session.summary = options.pendingSummary ?? "讨论已发出，等待成员开始发言。";
   session.preview = options.preview ?? prompt;
@@ -461,6 +468,7 @@ async function runPrompt(session, prompt, options = {}) {
         codex: { provider: ProviderId.TAURI_CODEX, model: session.codexModel },
         copilot: { provider: ProviderId.TAURI_COPILOT, model: session.copilotModel },
       },
+      cancelToken,
       onUpdate(snapshot) {
         syncSessionFromSnapshot(session, snapshot);
       },
@@ -494,11 +502,22 @@ async function runPrompt(session, prompt, options = {}) {
     ];
     await mirrorGatewayMessageToGateway(session, session.summary, "error");
   } finally {
+    session.activeCancelToken = null;
     session.baseMessages = [...session.messages];
     elements.sendBtn.disabled = false;
     elements.selfTestBtn.disabled = false;
     renderApp();
   }
+}
+
+function cancelCurrentRun() {
+  const session = getCurrentSession();
+  if (!session?.activeCancelToken) {
+    return;
+  }
+  session.activeCancelToken.cancel("user stopped from desktop");
+  session.summary = "正在停止当前讨论。已发出的底层 CLI 调用可能还会短暂收尾，但 UI 会尽快恢复。";
+  renderApp();
 }
 
 function ensureDiagnosticSession() {
@@ -508,6 +527,7 @@ function ensureDiagnosticSession() {
     existing.baseMessages = [];
     existing.summary = "等待新的讨论。";
     existing.activeRunId = "";
+    existing.activeCancelToken = null;
     existing.run = null;
     existing.preview = "等待新话题";
     existing.lastActivityAt = new Date().toISOString();

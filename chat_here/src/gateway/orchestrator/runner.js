@@ -1,10 +1,25 @@
 export function createCancelToken() {
+  const listeners = new Set();
   return {
     cancelled: false,
     reason: "",
     cancel(reason = "cancelled") {
+      if (this.cancelled) {
+        return;
+      }
       this.cancelled = true;
       this.reason = reason;
+      for (const listener of listeners) {
+        listener(this.reason);
+      }
+    },
+    subscribe(listener) {
+      if (this.cancelled) {
+        listener(this.reason);
+        return () => {};
+      }
+      listeners.add(listener);
+      return () => listeners.delete(listener);
     },
   };
 }
@@ -21,7 +36,7 @@ export async function runAdapterStep(label, operation, options = {}) {
     assertNotCancelled(cancelToken, label);
 
     try {
-      return await withTimeout(operation(), timeoutMs, label);
+      return await withTimeoutAndCancellation(operation(), timeoutMs, label, cancelToken);
     } catch (error) {
       lastError = error;
 
@@ -40,12 +55,13 @@ export async function runAdapterStep(label, operation, options = {}) {
   throw lastError;
 }
 
-function withTimeout(promise, timeoutMs, label) {
+function withTimeoutAndCancellation(promise, timeoutMs, label, cancelToken) {
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1) {
     throw new Error("timeoutMs must be a positive integer");
   }
 
   let timeoutId;
+  let unsubscribe = null;
 
   const timeout = new Promise((_, reject) => {
     timeoutId = setTimeout(() => {
@@ -53,8 +69,20 @@ function withTimeout(promise, timeoutMs, label) {
     }, timeoutMs);
   });
 
-  return Promise.race([promise, timeout]).finally(() => {
+  const candidates = [promise, timeout];
+  if (cancelToken) {
+    candidates.push(
+      new Promise((_, reject) => {
+        unsubscribe = cancelToken.subscribe((reason) => {
+          reject(new Error(`${label} cancelled: ${reason || "cancelled"}`));
+        });
+      }),
+    );
+  }
+
+  return Promise.race(candidates).finally(() => {
     clearTimeout(timeoutId);
+    unsubscribe?.();
   });
 }
 

@@ -46,3 +46,16 @@ test("runAdapterStep rejects cancelled operations before execution", async () =>
     /test.cancel cancelled: user requested/,
   );
 });
+
+test("runAdapterStep rejects when cancelled during execution", async () => {
+  const cancelToken = createCancelToken();
+  const pending = runAdapterStep(
+    "test.running_cancel",
+    () => new Promise(() => {}),
+    { cancelToken, timeoutMs: 10_000 },
+  );
+
+  cancelToken.cancel("user stopped");
+
+  await assert.rejects(() => pending, /test.running_cancel cancelled: user stopped/);
+});

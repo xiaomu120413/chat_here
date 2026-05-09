@@ -9,6 +9,7 @@ export function serializeSessionState(sessions, currentSessionId) {
       members: undefined,
       run: null,
       activeRunId: "",
+      activeCancelToken: undefined,
       gatewayMirroredMessageIds: Array.from(session.gatewayMirroredMessageIds ?? []),
     })),
   });
@@ -37,6 +38,7 @@ export function restoreSessionState(raw, options) {
         members: options.members,
         run: null,
         activeRunId: "",
+        activeCancelToken: null,
         gatewayMirroredMessageIds: new Set(session.gatewayMirroredMessageIds ?? []),
       }));
 
