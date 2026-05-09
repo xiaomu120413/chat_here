@@ -57,7 +57,7 @@ test("startRun can complete multiple review rounds", async () => {
       "user:task:r1",
       "codex:draft:r1",
       "copilot:review:r1",
-      "codex:revision:r1",
+      "codex:revision:r2",
       "copilot:review:r2",
     ],
   );

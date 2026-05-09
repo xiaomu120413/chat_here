@@ -1,3 +1,8 @@
 import { initGatewayController } from "./ui/controller.js";
+import { initMobileGatewayClient, shouldUseMobileGatewayClient } from "./mobile/client.js";
 
-initGatewayController();
+if (shouldUseMobileGatewayClient()) {
+  initMobileGatewayClient();
+} else {
+  initGatewayController();
+}

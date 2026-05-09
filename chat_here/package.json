@@ -4,10 +4,12 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "predev": "node scripts/clear-dev-port.mjs",
     "dev": "tauri dev",
     "build": "tauri build",
-    "frontend:dev": "vite --port 1420 --strictPort",
+    "frontend:dev": "vite --host 0.0.0.0 --port 1421 --strictPort",
     "frontend:build": "vite build",
+    "smoke:cli": "node scripts/smoke-cli.mjs",
     "test": "node --test src/gateway/tests/*.test.js"
   },
   "dependencies": {

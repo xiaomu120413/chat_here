@@ -2,267 +2,970 @@ import { startRun } from "../gateway/orchestrator/index.js";
 import { ProviderId } from "../gateway/adapters/config.js";
 import { createTauriOpenAIHealthClient, normalizeHealthResult } from "../gateway/adapters/tauriOpenAIHealth.js";
 import { AuthAgent, createTauriAuthBroker } from "../gateway/auth/tauriAuthBroker.js";
-import { CODEX_MODELS, COPILOT_MODELS, DEFAULT_CODEX_MODEL, DEFAULT_COPILOT_MODEL } from "../gateway/models.js";
+import { createGatewayApiClient } from "../gateway/http/client.js";
+import {
+  CODEX_MODELS,
+  COPILOT_MODELS,
+  DEFAULT_CODEX_MODEL,
+  DEFAULT_COPILOT_MODEL,
+} from "../gateway/models.js";
 import { createLocalStorageStore } from "../gateway/store/localStorageStore.js";
 import { invoke } from "@tauri-apps/api/core";
+import {
+  getErrorMessage,
+  renderHistory,
+  renderMemberList,
+  renderMessages,
+  renderSessionList,
+  scrollToBottom,
+  updateProgress,
+} from "./render.js";
 
 const store = createLocalStorageStore();
 const healthClient = createTauriOpenAIHealthClient();
 const authBroker = createTauriAuthBroker();
+const isTauriRuntime = Boolean(window.__TAURI_INTERNALS__);
 
-const AGENTS = {
-  codex: { name: "Codex", model: DEFAULT_CODEX_MODEL },
-  copilot: { name: "Copilot", model: DEFAULT_COPILOT_MODEL },
+const MEMBERS = Object.freeze([
+  { id: "me", name: "Me", role: "发起人", short: "M" },
+  { id: "codex", name: "Codex", role: "实现与推进", short: "C" },
+  { id: "copilot", name: "Copilot", role: "挑战与补充", short: "P" },
+  { id: "gateway", name: "Gateway", role: "调度与总结", short: "G" },
+]);
+
+let elements = null;
+let sessions = [];
+let currentSessionId = "";
+let searchQuery = "";
+let historyRecords = [];
+let healthState = {
+  codexReady: false,
+  copilotReady: false,
+  checkedAt: null,
+};
+let gatewayState = {
+  status: null,
+  client: null,
 };
 
-let sessions = [];
-let currentSession = null;
-let healthState = { ready: false };
-
 export function initGatewayController() {
-  const el = {
+  elements = collectElements();
+  populateModels();
+  bindEvents();
+  bootstrapSessions();
+  refreshHistory();
+  if (isTauriRuntime) {
+    refreshHealth();
+    refreshGatewayStatus();
+  } else {
+    healthState = {
+      codexReady: false,
+      copilotReady: false,
+      checkedAt: new Date().toISOString(),
+    };
+    renderBrowserPreviewMode();
+  }
+  renderApp();
+}
+
+function collectElements() {
+  return {
     sessionList: document.getElementById("session-list"),
-    contactsList: document.getElementById("contacts-list"),
+    sessionSearch: document.getElementById("session-search"),
     chatMessages: document.getElementById("chat-messages"),
     headerTitle: document.getElementById("header-title"),
+    headerMeta: document.getElementById("header-meta"),
+    providerHealth: document.getElementById("provider-health"),
     messageInput: document.getElementById("message-input"),
     sendBtn: document.getElementById("send-btn"),
     detailPanel: document.getElementById("detail-panel"),
+    shell: document.getElementById("im-app"),
+    railSessions: document.getElementById("rail-sessions"),
+    railMembers: document.getElementById("rail-members"),
+    railSelfTest: document.getElementById("rail-self-test"),
     memberInfoBox: document.getElementById("member-info-box"),
-    dissolveBtn: document.getElementById("dissolve-btn"),
-    historyList: document.getElementById("history-list"),
     summaryBox: document.getElementById("summary-box"),
     progressSection: document.getElementById("progress-section"),
-    configPanel: document.getElementById("config-panel"),
-    modalOverlay: document.getElementById("modal-overlay"),
-    groupNameInput: document.getElementById("group-name-input"),
+    historyList: document.getElementById("history-list"),
     modelInput: document.getElementById("model-input"),
     copilotModelInput: document.getElementById("copilot-model-input"),
     roundInput: document.getElementById("round-input"),
-  };
-
-  el.modelInput.innerHTML = CODEX_MODELS.map(m => `<option value="${m.id}" ${m.id === DEFAULT_CODEX_MODEL ? 'selected' : ''}>${m.label}</option>`).join('');
-  el.copilotModelInput.innerHTML = COPILOT_MODELS.map(m => `<option value="${m.id}" ${m.id === DEFAULT_COPILOT_MODEL ? 'selected' : ''}>${m.label}</option>`).join('');
-
-  el.sessionList.onclick = e => {
-    const del = e.target.closest(".session-delete");
-    if (del) { deleteSession(del.closest(".session-item").dataset.id); return; }
-    const item = e.target.closest(".session-item");
-    if (item) switchSession(item.dataset.id);
-  };
-
-  el.contactsList.onclick = e => {
-    const item = e.target.closest(".contact-item");
-    if (item) createPrivateChat(item.dataset.id);
-  };
-
-  el.sendBtn.onclick = () => sendMessage(el);
-  el.messageInput.onkeydown = e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(el); } };
-
-  document.getElementById("create-btn").onclick = () => el.modalOverlay.classList.remove("hidden");
-  document.getElementById("modal-close").onclick = () => el.modalOverlay.classList.add("hidden");
-  document.getElementById("create-cancel").onclick = () => el.modalOverlay.classList.add("hidden");
-  document.getElementById("create-confirm").onclick = () => createGroup(el);
-
-  document.getElementById("show-config").onclick = () => el.configPanel.classList.toggle("hidden");
-  el.dissolveBtn.onclick = () => { if (currentSession) deleteSession(currentSession); };
-
-  document.getElementById("codex-auth-btn").onclick = () => startAuth(AuthAgent.CODEX);
-  document.getElementById("copilot-auth-btn").onclick = () => startAuth(AuthAgent.COPILOT);
-
-  el.historyList.onclick = e => {
-    const item = e.target.closest(".history-item");
-    if (item) loadHistoryRun(item.dataset.id, el);
-  };
-
-  checkHealth();
-  loadHistory(el);
-  renderWelcome(el);
-}
-
-function renderWelcome(el) {
-  el.headerTitle.textContent = "Chat Here";
-  el.chatMessages.innerHTML = `<div class="message-wrapper"><div class="message-avatar gateway">G</div><div class="message-content">欢迎！点击左侧联系人开始私聊，或点击"+"创建群聊</div></div>`;
-  el.detailPanel.classList.add("hidden");
-  el.progressSection.style.display = "none";
-  renderSessions();
-}
-
-function renderSessions() {
-  const list = document.getElementById("session-list");
-  list.innerHTML = sessions.map(s => `
-    <div class="session-item ${s.id === currentSession ? 'active' : ''}" data-id="${s.id}">
-      <div class="session-avatar ${s.type === 'group' ? 'group' : s.agent}">${s.type === 'group' ? '群' : s.agent.charAt(0).toUpperCase()}</div>
-      <span class="session-name">${s.name}</span>
-      <button class="session-delete">×</button>
-    </div>
-  `).join('');
-}
-
-function createPrivateChat(agentId) {
-  const existing = sessions.find(s => s.type === "private" && s.agent === agentId);
-  if (existing) { switchSession(existing.id); return; }
-  
-  const agent = AGENTS[agentId];
-  sessions.unshift({ id: `p-${agentId}-${Date.now()}`, type: "private", name: agent.name, agent: agentId, model: agent.model, messages: [] });
-  renderSessions();
-  switchSession(sessions[0].id);
-}
-
-function createGroup(el) {
-  const name = el.groupNameInput.value.trim();
-  if (!name) return;
-  
-  const agents = [...document.querySelectorAll(".member-checkbox-list input:checked")].map(c => c.value);
-  sessions.unshift({ id: `g-${Date.now()}`, type: "group", name, agents, model: el.modelInput.value, copilotModel: el.copilotModelInput.value, rounds: +el.roundInput.value || 1, messages: [] });
-  
-  el.modalOverlay.classList.add("hidden");
-  renderSessions();
-  switchSession(sessions[0].id);
-}
-
-function switchSession(id) {
-  currentSession = id;
-  const s = sessions.find(x => x.id === id);
-  if (!s) return;
-
-  const el = {
-    headerTitle: document.getElementById("header-title"),
-    chatMessages: document.getElementById("chat-messages"),
-    detailPanel: document.getElementById("detail-panel"),
-    memberInfoBox: document.getElementById("member-info-box"),
+    modalOverlay: document.getElementById("modal-overlay"),
+    groupNameInput: document.getElementById("group-name-input"),
     dissolveBtn: document.getElementById("dissolve-btn"),
-    progressSection: document.getElementById("progress-section"),
+    selfTestBtn: document.getElementById("self-test-btn"),
+    toggleInfo: document.getElementById("toggle-info"),
+    detailClose: document.getElementById("detail-close"),
+    gatewayStatusBox: document.getElementById("gateway-status-box"),
+    gatewayLocalBtn: document.getElementById("gateway-local-btn"),
+    gatewayLanBtn: document.getElementById("gateway-lan-btn"),
+    gatewayStopBtn: document.getElementById("gateway-stop-btn"),
   };
-
-  el.headerTitle.textContent = s.name;
-  el.dissolveBtn.textContent = s.type === "group" ? "解散群聊" : "删除私聊";
-  
-  let membersHtml = `<div class="member-row"><div class="message-avatar me">M</div><span>Me</span></div>`;
-  if (s.type === "private") {
-    membersHtml += `<div class="member-row"><div class="message-avatar ${s.agent}">${s.agent.charAt(0).toUpperCase()}</div><span>${AGENTS[s.agent].name}</span></div>`;
-    el.progressSection.style.display = "none";
-  } else {
-    s.agents.forEach(a => membersHtml += `<div class="member-row"><div class="message-avatar ${a}">${a.charAt(0).toUpperCase()}</div><span>${AGENTS[a].name}</span></div>`);
-    el.progressSection.style.display = "block";
-  }
-  el.memberInfoBox.innerHTML = membersHtml;
-
-  el.chatMessages.innerHTML = s.messages.length ? "" : `<div class="message-wrapper"><div class="message-avatar gateway">G</div><div class="message-content">${s.type === "private" ? `开始与${s.name}私聊` : "群聊已创建，发送话题开始讨论"}</div></div>`;
-  s.messages.forEach(m => el.chatMessages.appendChild(createMsg(m)));
-
-  el.detailPanel.classList.remove("hidden");
-  renderSessions();
 }
 
-function deleteSession(id) {
-  sessions = sessions.filter(s => s.id !== id);
-  if (currentSession === id) {
-    currentSession = null;
-    renderWelcome({
-      headerTitle: document.getElementById("header-title"),
-      chatMessages: document.getElementById("chat-messages"),
-      detailPanel: document.getElementById("detail-panel"),
-      progressSection: document.getElementById("progress-section")
-    });
-  }
-  renderSessions();
-}
-
-async function sendMessage(el) {
-  const text = el.messageInput.value.trim();
-  if (!text || !currentSession) return;
-  
-  const s = sessions.find(x => x.id === currentSession);
-  el.messageInput.value = "";
-  
-  s.messages.push({ from: "me", content: text, time: Date.now() });
-  el.chatMessages.appendChild(createMsg(s.messages[s.messages.length - 1]));
-  
-  if (s.type === "private") {
-    if (!healthState.ready) { showReply(s, "认证未就绪"); return; }
-    el.sendBtn.disabled = true;
-    try {
-      const res = await invoke("chat_with_agent", { request: { agent: s.agent, model: s.model, message: s.messages.map(m => `${m.from}: ${m.content}`).join("\n") } });
-      showReply(s, res.output_text || "收到回复");
-    } catch (e) { showReply(s, `错误: ${e}`); }
-    el.sendBtn.disabled = false;
-  } else {
-    if (!healthState.ready) { showReply(s, "认证未就绪"); return; }
-    el.sendBtn.disabled = true;
-    setProgress("dispatch", "active");
-    try {
-      const result = await startRun(text, { store, maxRounds: s.rounds, providers: { codex: { provider: ProviderId.TAURI_CODEX, model: s.model }, copilot: { provider: ProviderId.TAURI_COPILOT, model: s.copilotModel } }, onUpdate: p => { syncMsgs(s, p.messages); refreshChat(s); updateProgress(p.run); } });
-      syncMsgs(s, result.messages);
-      refreshChat(s);
-      setProgress("dispatch", "done"); setProgress("review", "done"); setProgress("decision", "done");
-      el.summaryBox.textContent = result.decision ? `${result.decision.summary}\n\n${result.decision.rationale}` : "完成";
-      loadHistory(el);
-    } catch (e) { showReply(s, `错误: ${e.message}`); }
-    el.sendBtn.disabled = false;
-  }
-}
-
-function showReply(s, text) {
-  s.messages.push({ from: s.agent || "gateway", content: text, time: Date.now() });
-  document.getElementById("chat-messages").appendChild(createMsg(s.messages[s.messages.length - 1]));
-}
-
-function syncMsgs(s, msgs) {
-  msgs.forEach(m => {
-    if (!s.messages.find(x => x.time === (m.createdAt || Date.now()))) {
-      s.messages.push({ from: m.source.toLowerCase(), content: m.content, time: m.createdAt || Date.now() });
+function bindEvents() {
+  elements.sessionList.addEventListener("click", handleSessionListClick);
+  elements.sessionSearch.addEventListener("input", (event) => {
+    searchQuery = event.target.value;
+    renderSessionList(elements.sessionList, sessions, currentSessionId, searchQuery);
+  });
+  elements.sendBtn.addEventListener("click", submitTopic);
+  elements.messageInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      submitTopic();
     }
+  });
+  document.getElementById("create-btn").addEventListener("click", () => {
+    elements.groupNameInput.value = "";
+    elements.modalOverlay.classList.remove("hidden");
+  });
+  document.getElementById("modal-close").addEventListener("click", closeModal);
+  document.getElementById("create-cancel").addEventListener("click", closeModal);
+  document.getElementById("create-confirm").addEventListener("click", createGroupSession);
+  document.getElementById("codex-auth-btn").addEventListener("click", () => startAuth(AuthAgent.CODEX));
+  document.getElementById("copilot-auth-btn").addEventListener("click", () => startAuth(AuthAgent.COPILOT));
+  elements.selfTestBtn.addEventListener("click", runSelfTest);
+  elements.historyList.addEventListener("click", handleHistoryClick);
+  elements.dissolveBtn.addEventListener("click", deleteCurrentSession);
+  elements.toggleInfo.addEventListener("click", () => elements.detailPanel.classList.toggle("open"));
+  elements.detailClose.addEventListener("click", () => elements.detailPanel.classList.remove("open"));
+  elements.railSessions.addEventListener("click", toggleSessionList);
+  elements.railMembers.addEventListener("click", () => {
+    elements.shell.classList.remove("show-session-list");
+    elements.detailPanel.classList.toggle("open");
+  });
+  elements.railSelfTest.addEventListener("click", runSelfTest);
+  document.querySelectorAll(".mention-tool").forEach((button) => {
+    button.addEventListener("click", () => insertComposerText(button.dataset.insert ?? ""));
+  });
+  elements.gatewayLocalBtn.addEventListener("click", () => startGateway(false));
+  elements.gatewayLanBtn.addEventListener("click", () => startGateway(true));
+  elements.gatewayStopBtn.addEventListener("click", stopGateway);
+  syncRuntimeOnlyControls();
+  elements.modelInput.addEventListener("change", syncCurrentSessionConfig);
+  elements.copilotModelInput.addEventListener("change", syncCurrentSessionConfig);
+  elements.roundInput.addEventListener("change", syncCurrentSessionConfig);
+}
+
+function bootstrapSessions() {
+  sessions = [createSession("Architecture Room")];
+  currentSessionId = sessions[0].id;
+}
+
+function populateModels() {
+  elements.modelInput.innerHTML = CODEX_MODELS.map(createOptionHtml(DEFAULT_CODEX_MODEL)).join("");
+  elements.copilotModelInput.innerHTML = COPILOT_MODELS.map(createOptionHtml(DEFAULT_COPILOT_MODEL)).join("");
+}
+
+function createOptionHtml(selectedValue) {
+  return (model) =>
+    `<option value="${model.id}"${model.id === selectedValue ? " selected" : ""}>${model.label}</option>`;
+}
+
+function createSession(name) {
+  const now = new Date().toISOString();
+  return {
+    id: `session_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    name,
+    avatar: "群",
+    preview: "等待新话题",
+    lastActivityAt: now,
+    codexModel: DEFAULT_CODEX_MODEL,
+    copilotModel: DEFAULT_COPILOT_MODEL,
+    rounds: 3,
+    members: MEMBERS,
+    messages: [],
+    baseMessages: [],
+    gatewayThreadId: "",
+    gatewayMirroredMessageIds: new Set(),
+    run: null,
+    summary: "等待新的讨论。",
+    activeRunId: "",
+  };
+}
+
+function getCurrentSession() {
+  return sessions.find((session) => session.id === currentSessionId) ?? sessions[0] ?? null;
+}
+
+function renderApp() {
+  const session = getCurrentSession();
+  if (!session) {
+    return;
+  }
+
+  elements.headerTitle.textContent = session.name;
+  elements.headerMeta.textContent = buildHeaderMeta(session);
+  elements.modelInput.value = session.codexModel;
+  elements.copilotModelInput.value = session.copilotModel;
+  elements.roundInput.value = String(session.rounds);
+  elements.summaryBox.textContent = session.summary;
+  elements.providerHealth.textContent = buildHealthLabel();
+
+  renderSessionList(elements.sessionList, sessions, currentSessionId, searchQuery);
+  renderMemberList(elements.memberInfoBox, session);
+  renderMessages(elements.chatMessages, session);
+  updateProgress(elements.progressSection, session.run);
+  renderHistory(elements.historyList, historyRecords, session.activeRunId);
+  scrollToBottom(elements.chatMessages);
+}
+
+function buildHeaderMeta(session) {
+  const running = session.run && !["completed", "failed"].includes(session.run.status);
+  if (running) {
+    return `${session.members.length} 位成员 · ${describeRunStatus(session.run.status)}`;
+  }
+  return `${session.members.length} 位成员 · ${session.preview || "等待新话题"}`;
+}
+
+function buildHealthLabel() {
+  if (!isTauriRuntime) {
+    return "浏览器预览模式：Tauri 后端不可用";
+  }
+  if (!healthState.checkedAt) {
+    return "正在检查认证状态";
+  }
+  if (healthState.codexReady && healthState.copilotReady) {
+    return "Codex / Copilot 已认证";
+  }
+  const missing = [];
+  if (!healthState.codexReady) {
+    missing.push("Codex");
+  }
+  if (!healthState.copilotReady) {
+    missing.push("Copilot");
+  }
+  return `${missing.join(" / ")} 未认证`;
+}
+
+function handleSessionListClick(event) {
+  const deleteButton = event.target.closest("[data-role='delete']");
+  if (deleteButton) {
+    event.stopPropagation();
+    deleteSession(deleteButton.closest(".session-item")?.dataset.id || "");
+    return;
+  }
+
+  const item = event.target.closest(".session-item");
+  if (!item?.dataset.id) {
+    return;
+  }
+  currentSessionId = item.dataset.id;
+  elements.shell.classList.remove("show-session-list");
+  renderApp();
+}
+
+function toggleSessionList() {
+  elements.detailPanel.classList.remove("open");
+  elements.shell.classList.toggle("show-session-list");
+}
+
+function insertComposerText(text) {
+  if (!text) {
+    return;
+  }
+  const input = elements.messageInput;
+  const start = input.selectionStart ?? input.value.length;
+  const end = input.selectionEnd ?? input.value.length;
+  const prefix = start > 0 && !/\s$/.test(input.value.slice(0, start)) ? " " : "";
+  input.value = `${input.value.slice(0, start)}${prefix}${text}${input.value.slice(end)}`;
+  const nextCursor = start + prefix.length + text.length;
+  input.focus();
+  input.setSelectionRange(nextCursor, nextCursor);
+}
+
+function closeModal() {
+  elements.modalOverlay.classList.add("hidden");
+}
+
+function createGroupSession() {
+  const name = elements.groupNameInput.value.trim();
+  if (!name) {
+    return;
+  }
+
+  const session = createSession(name);
+  sessions.unshift(session);
+  currentSessionId = session.id;
+  closeModal();
+  renderApp();
+  void ensureGatewayThread(session);
+}
+
+function deleteCurrentSession() {
+  deleteSession(currentSessionId);
+}
+
+function deleteSession(sessionId) {
+  if (!sessionId) {
+    return;
+  }
+  sessions = sessions.filter((session) => session.id !== sessionId);
+  if (!sessions.length) {
+    sessions = [createSession("Architecture Room")];
+  }
+  currentSessionId = sessions[0].id;
+  renderApp();
+}
+
+function syncCurrentSessionConfig() {
+  const session = getCurrentSession();
+  if (!session) {
+    return;
+  }
+  session.codexModel = elements.modelInput.value;
+  session.copilotModel = elements.copilotModelInput.value;
+  session.rounds = normalizeRoundValue(elements.roundInput.value);
+}
+
+function normalizeRoundValue(value) {
+  const rounds = Number(value);
+  if (!Number.isInteger(rounds)) {
+    return 3;
+  }
+  return Math.max(1, Math.min(5, rounds));
+}
+
+async function submitTopic() {
+  const session = getCurrentSession();
+  const prompt = elements.messageInput.value.trim();
+  if (!session || !prompt) {
+    return;
+  }
+
+  if (!isTauriRuntime) {
+    session.messages = [
+      ...session.messages,
+      createUiMessage({
+        source: "gateway",
+        kind: "error",
+        content: "当前是浏览器预览模式，只用于检查 UI。请在 Tauri 窗口中发送真实讨论。",
+        createdAt: new Date().toISOString(),
+      }),
+    ];
+    renderApp();
+    return;
+  }
+
+  syncCurrentSessionConfig();
+  elements.messageInput.value = "";
+  await runPrompt(session, prompt, {
+    preview: prompt,
+    pendingSummary: "讨论已发出，等待成员开始发言。",
   });
 }
 
-function refreshChat(s) {
-  const el = document.getElementById("chat-messages");
-  el.innerHTML = "";
-  s.messages.forEach(m => el.appendChild(createMsg(m)));
-}
+async function runSelfTest() {
+  if (!isTauriRuntime) {
+    renderBrowserPreviewMode();
+    return;
+  }
+  const session = ensureDiagnosticSession();
+  currentSessionId = session.id;
+  session.summary = "正在运行 CLI smoke：Codex / Copilot";
+  renderApp();
 
-function createMsg(m) {
-  const div = document.createElement("div");
-  div.className = `message-wrapper ${m.from === "me" ? "self" : ""}`;
-  div.innerHTML = `<div class="message-avatar ${m.from === "me" ? "me" : m.from}">${m.from === "me" ? "M" : m.from.charAt(0).toUpperCase()}</div><div class="message-content">${m.content}</div>`;
-  return div;
-}
-
-function setProgress(id, state) {
-  const el = document.getElementById(`progress-${id}`);
-  el.className = `progress-item ${state}`;
-  el.querySelector(".progress-status").textContent = state === "done" ? "完成" : state === "active" ? "进行中" : "等待";
-}
-
-function updateProgress(run) {
-  if (run.status === "COMPLETED") { setProgress("dispatch", "done"); setProgress("review", "done"); setProgress("decision", "done"); }
-  else if (run.currentStep?.includes("CODEX")) { setProgress("dispatch", "done"); setProgress("review", "active"); }
-  else if (run.currentStep?.includes("COPILOT")) { setProgress("dispatch", "done"); setProgress("review", "active"); }
-}
-
-async function checkHealth() {
+  elements.selfTestBtn.disabled = true;
   try {
-    const r = normalizeHealthResult(await healthClient.check());
-    healthState.ready = r.agents.codex.ready && r.agents.copilot.ready;
-    document.getElementById("provider-health").textContent = healthState.ready ? "认证就绪" : "未认证";
-  } catch (e) { document.getElementById("provider-health").textContent = "检查失败"; }
+    const smoke = await invoke("cli_smoke_test");
+    const lines = [
+      smoke?.codex?.ok ? "Codex smoke: PASS" : `Codex smoke: FAIL - ${smoke?.codex?.message ?? "unknown error"}`,
+      smoke?.copilot?.ok
+        ? "Copilot smoke: PASS"
+        : `Copilot smoke: FAIL - ${smoke?.copilot?.message ?? "unknown error"}`,
+    ];
+    session.summary = lines.join("\n");
+    if (!smoke?.ready) {
+      session.messages = [
+        createUiMessage({
+          source: "gateway",
+          kind: "error",
+          content: `真实链路自检失败。\n\n${session.summary}`,
+          createdAt: new Date().toISOString(),
+        }),
+      ];
+      renderApp();
+      return;
+    }
+  } catch (error) {
+    session.summary = `CLI smoke failed: ${getErrorMessage(error)}`;
+    session.messages = [
+      createUiMessage({
+        source: "gateway",
+        kind: "error",
+        content: session.summary,
+        createdAt: new Date().toISOString(),
+      }),
+    ];
+    renderApp();
+    return;
+  } finally {
+    elements.selfTestBtn.disabled = false;
+  }
+
+  await runPrompt(
+    session,
+    "请作为真实在线的 Codex 与 Copilot 做一次最小自检讨论。Codex 先用一句话确认自己在线并说明职责；Copilot 再用一句话确认自己在线并说明职责；最后请 Codex 输出供网关生成总结所需的简短结论。不要寒暄，不要输出 markdown。",
+    {
+      preview: "真实链路自检",
+      pendingSummary: "正在运行真实链路自检：Codex -> Copilot -> Codex summary",
+    },
+  );
 }
 
-async function startAuth(agent) { await authBroker.start(agent); checkHealth(); }
+async function runPrompt(session, prompt, options = {}) {
+  if (!session || session.activeRunId) {
+    return;
+  }
 
-async function loadHistory(el) {
+  if (!healthState.codexReady || !healthState.copilotReady) {
+    session.summary = buildHealthLabel();
+    renderApp();
+    return;
+  }
+
+  elements.sendBtn.disabled = true;
+  elements.selfTestBtn.disabled = true;
+  session.baseMessages = [...session.messages];
+  session.summary = options.pendingSummary ?? "讨论已发出，等待成员开始发言。";
+  session.preview = options.preview ?? prompt;
+  session.lastActivityAt = new Date().toISOString();
+  session.run = {
+    status: "dispatching",
+    currentStep: "dispatch",
+  };
+  renderApp();
+
+  try {
+    await mirrorUserPromptToGateway(session, prompt);
+    const result = await startRun(prompt, {
+      store,
+      maxRounds: session.rounds,
+      providers: {
+        codex: { provider: ProviderId.TAURI_CODEX, model: session.codexModel },
+        copilot: { provider: ProviderId.TAURI_COPILOT, model: session.copilotModel },
+      },
+      onUpdate(snapshot) {
+        syncSessionFromSnapshot(session, snapshot);
+      },
+    });
+
+    syncSessionFromSnapshot(session, result);
+    await mirrorRunResultToGateway(session, result);
+    session.summary = result.decision
+      ? [result.decision.summary, result.decision.rationale].filter(Boolean).join("\n\n")
+      : "讨论完成。";
+    await mirrorSummaryToGateway(session, result);
+    await refreshHistory();
+  } catch (error) {
+    session.activeRunId = "";
+    session.run = {
+      status: "failed",
+      currentStep: "summary",
+      error: getErrorMessage(error),
+    };
+    session.summary = `失败：${getErrorMessage(error)}`;
+    session.messages = [
+      ...session.baseMessages,
+      createUiMessage({
+        source: "gateway",
+        kind: "error",
+        content: session.summary,
+        createdAt: new Date().toISOString(),
+      }),
+    ];
+    await mirrorGatewayMessageToGateway(session, session.summary, "error");
+  } finally {
+    session.baseMessages = [...session.messages];
+    elements.sendBtn.disabled = false;
+    elements.selfTestBtn.disabled = false;
+    renderApp();
+  }
+}
+
+function ensureDiagnosticSession() {
+  const existing = sessions.find((session) => session.name === "真实链路自检");
+  if (existing) {
+    existing.messages = [];
+    existing.baseMessages = [];
+    existing.summary = "等待新的讨论。";
+    existing.activeRunId = "";
+    existing.run = null;
+    existing.preview = "等待新话题";
+    existing.lastActivityAt = new Date().toISOString();
+    return existing;
+  }
+
+  const session = createSession("真实链路自检");
+  session.rounds = 2;
+  sessions.unshift(session);
+  return session;
+}
+
+function syncSessionFromSnapshot(session, snapshot) {
+  session.activeRunId = snapshot.run?.status === "completed" || snapshot.run?.status === "failed" ? "" : snapshot.run?.id || "";
+  session.run = snapshot.run ?? null;
+  session.messages = [
+    ...session.baseMessages,
+    ...snapshot.messages.map((message) =>
+      createUiMessage({
+        id: message.id,
+        source: mapSource(message.source),
+        kind: message.kind,
+        content: message.content,
+        createdAt: message.createdAt,
+        round: message.round,
+      }),
+    ),
+  ];
+  session.preview = session.messages.at(-1)?.content ?? session.preview;
+  session.lastActivityAt = snapshot.run?.startedAt ?? session.lastActivityAt;
+  renderApp();
+}
+
+function createUiMessage({ id, source, kind, content, createdAt, round }) {
+  const profile = getMemberProfile(source);
+  return {
+    id: id ?? `ui_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    source,
+    name: profile.name,
+    short: profile.short,
+    tag: buildMessageTag(source, kind, round),
+    content,
+    createdAt: createdAt ?? new Date().toISOString(),
+  };
+}
+
+function mapSource(source) {
+  return source === "user" ? "me" : source;
+}
+
+function getMemberProfile(source) {
+  return MEMBERS.find((member) => member.id === source) ?? MEMBERS[3];
+}
+
+function buildMessageTag(source, kind, round) {
+  if (source === "me") {
+    return "发起话题";
+  }
+  if (source === "gateway") {
+    return kind === "error" ? "调度失败" : "网关消息";
+  }
+  return `Round ${round} · ${kind}`;
+}
+
+async function refreshHealth() {
+  if (!isTauriRuntime) {
+    renderBrowserPreviewMode();
+    return;
+  }
+  try {
+    const normalized = normalizeHealthResult(await healthClient.check());
+    healthState = {
+      codexReady: Boolean(normalized.agents?.codex?.ready),
+      copilotReady: Boolean(normalized.agents?.copilot?.ready),
+      checkedAt: new Date().toISOString(),
+    };
+  } catch {
+    healthState = {
+      codexReady: false,
+      copilotReady: false,
+      checkedAt: new Date().toISOString(),
+    };
+  }
+  renderApp();
+}
+
+async function startAuth(agent) {
+  if (!isTauriRuntime) {
+    renderBrowserPreviewMode();
+    return;
+  }
+  await authBroker.start(agent);
+  await refreshHealth();
+}
+
+async function refreshGatewayStatus() {
+  if (!isTauriRuntime) {
+    renderBrowserPreviewMode();
+    return;
+  }
+  try {
+    renderGatewayStatus(await invoke("gateway_status"));
+  } catch (error) {
+    elements.gatewayStatusBox.textContent = `Gateway 状态读取失败：${getErrorMessage(error)}`;
+  }
+}
+
+async function startGateway(exposeLan) {
+  if (!isTauriRuntime) {
+    renderBrowserPreviewMode();
+    return;
+  }
+  setGatewayButtonsDisabled(true);
+  try {
+    renderGatewayStatus(
+      await invoke("start_gateway_service", {
+        request: {
+          exposeLan,
+          port: 17321,
+        },
+      }),
+    );
+  } catch (error) {
+    elements.gatewayStatusBox.textContent = `Gateway 启动失败：${getErrorMessage(error)}`;
+  } finally {
+    setGatewayButtonsDisabled(false);
+  }
+}
+
+async function stopGateway() {
+  if (!isTauriRuntime) {
+    renderBrowserPreviewMode();
+    return;
+  }
+  setGatewayButtonsDisabled(true);
+  try {
+    renderGatewayStatus(await invoke("stop_gateway_service"));
+  } catch (error) {
+    elements.gatewayStatusBox.textContent = `Gateway 停止失败：${getErrorMessage(error)}`;
+  } finally {
+    setGatewayButtonsDisabled(false);
+  }
+}
+
+function renderGatewayStatus(status) {
+  if (!status?.running) {
+    gatewayState = {
+      status: null,
+      client: null,
+    };
+    elements.gatewayStatusBox.textContent = "Gateway 未启动。\n局域网模式不会自动开启，需要手动点击。";
+    return;
+  }
+
+  gatewayState = {
+    status,
+    client: createGatewayApiClient({
+      baseUrl: status.localUrl,
+      token: status.token,
+    }),
+  };
+
+  const lines = [
+    `状态：运行中 (${status.exposeLan ? "局域网" : "本机"})`,
+    `本机：${status.localUrl}`,
+  ];
+  if (status.lanUrl) {
+    lines.push(`手机：${status.lanUrl}`);
+    lines.push(`手机入口：${buildMobileEntryUrl(status.lanUrl, status.token)}`);
+  }
+  lines.push(`Token：${status.token}`);
+  lines.push("说明：手机访问 API 时需要 Authorization: Bearer <Token>。");
+  elements.gatewayStatusBox.textContent = lines.join("\n");
+}
+
+function buildMobileEntryUrl(gatewayUrl, token) {
+  const gateway = new URL(gatewayUrl);
+  const appUrl = new URL(window.location.href);
+  appUrl.hostname = gateway.hostname;
+  appUrl.port = "1421";
+  appUrl.pathname = "/";
+  appUrl.search = "";
+  appUrl.hash = "";
+  appUrl.searchParams.set("mobile", "1");
+  appUrl.searchParams.set("gateway", gatewayUrl);
+  appUrl.searchParams.set("token", token);
+  return appUrl.toString();
+}
+
+async function ensureGatewayThread(session) {
+  if (!session || !gatewayState.client || session.gatewayThreadId) {
+    return session?.gatewayThreadId ?? "";
+  }
+
+  try {
+    const created = await gatewayState.client.createThread({
+      title: session.name,
+      createdBy: { type: "human", id: "user", name: "Me" },
+      metadata: { pcSessionId: session.id },
+    });
+    session.gatewayThreadId = created.thread.id;
+    return session.gatewayThreadId;
+  } catch (error) {
+    appendGatewayNotice(session, `Gateway 同步会话失败：${getErrorMessage(error)}`);
+    return "";
+  }
+}
+
+async function mirrorUserPromptToGateway(session, prompt) {
+  if (!session || !prompt || !gatewayState.client) {
+    return;
+  }
+  const threadId = await ensureGatewayThread(session);
+  if (!threadId) {
+    return;
+  }
+
+  const mirrorKey = `user:${prompt}:${session.lastActivityAt}`;
+  if (session.gatewayMirroredMessageIds.has(mirrorKey)) {
+    return;
+  }
+
+  try {
+    const sent = await gatewayState.client.sendMessage(threadId, {
+      kind: "user",
+      source: { type: "human", id: "user", name: "Me" },
+      targetAgents: inferTargetAgents(prompt),
+      content: prompt,
+      dispatch: false,
+    });
+    session.gatewayMirroredMessageIds.add(mirrorKey);
+    if (sent?.message?.id) {
+      session.gatewayMirroredMessageIds.add(sent.message.id);
+    }
+  } catch (error) {
+    appendGatewayNotice(session, `Gateway 同步消息失败：${getErrorMessage(error)}`);
+  }
+}
+
+async function mirrorRunResultToGateway(session, result) {
+  if (!session || !result?.messages?.length || !gatewayState.client) {
+    return;
+  }
+  const threadId = await ensureGatewayThread(session);
+  if (!threadId) {
+    return;
+  }
+
+  for (const message of result.messages) {
+    if (!message?.id || session.gatewayMirroredMessageIds.has(message.id) || message.source === "user") {
+      continue;
+    }
+    try {
+      await gatewayState.client.sendMessage(threadId, {
+        kind: mapGatewayMessageKind(message),
+        source: createGatewayMessageSource(message.source),
+        targetAgents: message.target ? [message.target].filter((target) => target !== "user") : [],
+        content: message.content,
+        dispatch: false,
+      });
+      session.gatewayMirroredMessageIds.add(message.id);
+    } catch (error) {
+      appendGatewayNotice(session, `Gateway 同步 ${message.source} 回复失败：${getErrorMessage(error)}`);
+      return;
+    }
+  }
+}
+
+async function mirrorSummaryToGateway(session, result) {
+  if (!session || !result?.decision || !gatewayState.client) {
+    return;
+  }
+  const threadId = await ensureGatewayThread(session);
+  const key = `summary:${result.decision.id}`;
+  if (!threadId || session.gatewayMirroredMessageIds.has(key)) {
+    return;
+  }
+
+  const content = [result.decision.summary, result.decision.rationale].filter(Boolean).join("\n\n");
+  if (!content.trim()) {
+    return;
+  }
+
+  try {
+    await gatewayState.client.sendMessage(threadId, {
+      kind: "summary",
+      source: { type: "gateway", id: "gateway", name: "Gateway" },
+      targetAgents: [],
+      content,
+      dispatch: false,
+    });
+    session.gatewayMirroredMessageIds.add(key);
+  } catch (error) {
+    appendGatewayNotice(session, `Gateway 同步总结失败：${getErrorMessage(error)}`);
+  }
+}
+
+async function mirrorGatewayMessageToGateway(session, content, kind = "gateway") {
+  if (!session || !content || !gatewayState.client) {
+    return;
+  }
+  const threadId = await ensureGatewayThread(session);
+  if (!threadId) {
+    return;
+  }
+
+  const key = `${kind}:${content}`;
+  if (session.gatewayMirroredMessageIds.has(key)) {
+    return;
+  }
+
+  try {
+    await gatewayState.client.sendMessage(threadId, {
+      kind,
+      source: { type: "gateway", id: "gateway", name: "Gateway" },
+      targetAgents: [],
+      content,
+      dispatch: false,
+    });
+    session.gatewayMirroredMessageIds.add(key);
+  } catch {
+    // Avoid recursive UI errors when the Gateway error reporter itself fails.
+  }
+}
+
+function inferTargetAgents(prompt) {
+  const normalized = prompt.toLowerCase();
+  const targets = [];
+  if (normalized.includes("@codex") || normalized.includes("@all")) {
+    targets.push("codex");
+  }
+  if (normalized.includes("@copilot") || normalized.includes("@all")) {
+    targets.push("copilot");
+  }
+  return targets;
+}
+
+function mapGatewayMessageKind(message) {
+  if (message.kind === "error") {
+    return "error";
+  }
+  if (message.source === "gateway") {
+    return "gateway";
+  }
+  return "agent";
+}
+
+function createGatewayMessageSource(source) {
+  if (source === "codex") {
+    return { type: "agent", id: "codex", name: "Codex" };
+  }
+  if (source === "copilot") {
+    return { type: "agent", id: "copilot", name: "Copilot" };
+  }
+  if (source === "gateway") {
+    return { type: "gateway", id: "gateway", name: "Gateway" };
+  }
+  return { type: "human", id: "user", name: "Me" };
+}
+
+function appendGatewayNotice(session, content) {
+  if (!session || !content) {
+    return;
+  }
+  const notice = createUiMessage({
+    source: "gateway",
+    kind: "error",
+    content,
+    createdAt: new Date().toISOString(),
+  });
+  session.messages = [
+    ...session.messages,
+    notice,
+  ];
+  session.baseMessages = [
+    ...session.baseMessages,
+    notice,
+  ];
+  renderApp();
+}
+
+function setGatewayButtonsDisabled(disabled) {
+  elements.gatewayLocalBtn.disabled = disabled;
+  elements.gatewayLanBtn.disabled = disabled;
+  elements.gatewayStopBtn.disabled = disabled;
+}
+
+function syncRuntimeOnlyControls() {
+  if (isTauriRuntime) {
+    return;
+  }
+
+  const runtimeOnlyControls = [
+    elements.selfTestBtn,
+    elements.railSelfTest,
+    elements.gatewayLocalBtn,
+    elements.gatewayLanBtn,
+    elements.gatewayStopBtn,
+    document.getElementById("codex-auth-btn"),
+    document.getElementById("copilot-auth-btn"),
+  ];
+  for (const control of runtimeOnlyControls) {
+    control.disabled = true;
+    control.title = "需要在 Tauri 应用窗口中使用";
+  }
+}
+
+function renderBrowserPreviewMode() {
+  if (elements?.gatewayStatusBox) {
+    elements.gatewayStatusBox.textContent =
+      "浏览器预览模式：Tauri 后端不可用。\n这里可以检查布局和输入体验；真实 Gateway、登录和自检请在 Tauri 窗口中使用。";
+  }
+}
+
+async function refreshHistory() {
   const runs = await store.listRuns();
-  const snaps = await Promise.all(runs.slice(0, 10).map(r => store.getRun(r.id)));
-  el.historyList.innerHTML = snaps.filter(Boolean).map(s => `<div class="history-item" data-id="${s.run.id}">${truncate(s.task?.prompt || s.run.id, 30)}</div>`).join("") || "<div class='history-item'>暂无历史</div>";
+  historyRecords = (
+    await Promise.all(
+      runs.slice(0, 12).map(async (run) => store.getRun(run.id)),
+    )
+  ).filter(Boolean);
+  renderApp();
 }
 
-async function loadHistoryRun(id, el) {
-  const snap = await store.getRun(id);
-  if (!snap) return;
-  el.chatMessages.innerHTML = "";
-  snap.messages?.forEach(m => el.chatMessages.appendChild(createMsg({ from: m.source.toLowerCase(), content: m.content })));
-  el.summaryBox.textContent = snap.decision ? `${snap.decision.summary}\n\n${snap.decision.rationale}` : "历史记录";
+async function handleHistoryClick(event) {
+  const item = event.target.closest(".history-item");
+  if (!item?.dataset.id) {
+    return;
+  }
+
+  const snapshot = await store.getRun(item.dataset.id);
+  if (!snapshot) {
+    return;
+  }
+
+  const session = getCurrentSession();
+  if (!session) {
+    return;
+  }
+
+  session.messages = snapshot.messages.map((message) =>
+    createUiMessage({
+      id: message.id,
+      source: mapSource(message.source),
+      kind: message.kind,
+      content: message.content,
+      createdAt: message.createdAt,
+      round: message.round,
+    }),
+  );
+  session.baseMessages = [...session.messages];
+  session.run = snapshot.run;
+  session.activeRunId = snapshot.run.id;
+  session.summary = snapshot.decision
+    ? [snapshot.decision.summary, snapshot.decision.rationale].filter(Boolean).join("\n\n")
+    : "该运行没有总结。";
+  session.preview = snapshot.task?.prompt ?? session.preview;
+  renderApp();
 }
 
-function truncate(t, n) { return t?.length > n ? t.slice(0, n) + "..." : t || ""; }
+function describeRunStatus(status) {
+  switch (status) {
+    case "dispatching":
+      return "正在派发";
+    case "awaiting_codex":
+      return "Codex 思考中";
+    case "awaiting_copilot":
+      return "Copilot 思考中";
+    case "summarizing":
+      return "Codex 总结中";
+    case "completed":
+      return "已完成";
+    case "failed":
+      return "已失败";
+    default:
+      return "处理中";
+  }
+}

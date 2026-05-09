@@ -24,12 +24,20 @@ const STEP_TYPE_VALUES = [
 const AGENT_ID_VALUES = ["user", "gateway", "codex", "copilot"];
 const MESSAGE_KIND_VALUES = ["task", "draft", "review", "revision", "summary", "error"];
 const CAPABILITY_VALUES = ["read_only", "propose_patch", "execute_command", "apply_change"];
+const THREAD_STATUS_VALUES = ["active", "archived"];
+const THREAD_MESSAGE_KIND_VALUES = ["user", "agent", "gateway", "system", "summary", "error"];
+const MESSAGE_SOURCE_TYPE_VALUES = ["human", "agent", "gateway", "system"];
+const INVOCATION_STATUS_VALUES = ["queued", "running", "succeeded", "failed", "canceled"];
 
 export const RunStatus = createEnum(RUN_STATUS_VALUES);
 export const StepType = createEnum(STEP_TYPE_VALUES);
 export const AgentId = createEnum(AGENT_ID_VALUES);
 export const MessageKind = createEnum(MESSAGE_KIND_VALUES);
 export const Capability = createEnum(CAPABILITY_VALUES);
+export const ThreadStatus = createEnum(THREAD_STATUS_VALUES);
+export const ThreadMessageKind = createEnum(THREAD_MESSAGE_KIND_VALUES);
+export const MessageSourceType = createEnum(MESSAGE_SOURCE_TYPE_VALUES);
+export const InvocationStatus = createEnum(INVOCATION_STATUS_VALUES);
 
 export function createTask(input) {
   assertObject(input, "task input");
@@ -177,6 +185,90 @@ export function createReference(input) {
   };
 }
 
+export function createThread(input) {
+  assertObject(input, "thread input");
+  assertNonEmptyString(input.title, "thread.title");
+  assertEnum(input.status ?? ThreadStatus.ACTIVE, THREAD_STATUS_VALUES, "thread.status");
+
+  const createdAt = ensureIso(input.createdAt, "thread.createdAt");
+
+  return {
+    id: input.id ?? createId("thread"),
+    title: input.title.trim(),
+    status: input.status ?? ThreadStatus.ACTIVE,
+    createdBy: normalizeSource(input.createdBy ?? { type: MessageSourceType.HUMAN, id: AgentId.USER }, "thread.createdBy"),
+    createdAt,
+    updatedAt: input.updatedAt ? ensureIso(input.updatedAt, "thread.updatedAt") : createdAt,
+    metadata: normalizePlainObject(input.metadata ?? {}, "thread.metadata"),
+  };
+}
+
+export function createThreadMessage(input) {
+  assertObject(input, "threadMessage input");
+  assertNonEmptyString(input.threadId, "threadMessage.threadId");
+  assertEnum(input.kind, THREAD_MESSAGE_KIND_VALUES, "threadMessage.kind");
+  assertNonEmptyString(input.content, "threadMessage.content");
+
+  return {
+    id: input.id ?? createId("msg"),
+    threadId: input.threadId,
+    kind: input.kind,
+    source: normalizeSource(input.source, "threadMessage.source"),
+    targetAgents: normalizeStringArray(input.targetAgents ?? [], "threadMessage.targetAgents"),
+    replyTo: input.replyTo ? normalizeNonEmptyString(input.replyTo, "threadMessage.replyTo") : null,
+    content: input.content.trim(),
+    attachments: normalizeArray(input.attachments ?? [], "threadMessage.attachments"),
+    createdAt: ensureIso(input.createdAt, "threadMessage.createdAt"),
+    metadata: normalizePlainObject(input.metadata ?? {}, "threadMessage.metadata"),
+    a2a: normalizePlainObject(input.a2a ?? {}, "threadMessage.a2a"),
+  };
+}
+
+export function createGatewayEventRecord(input) {
+  assertObject(input, "gatewayEvent input");
+  assertNonEmptyString(input.threadId, "gatewayEvent.threadId");
+  assertNonEmptyString(input.type, "gatewayEvent.type");
+
+  return {
+    id: input.id ?? createId("event"),
+    threadId: input.threadId,
+    type: input.type.trim(),
+    payload: normalizePlainObject(input.payload ?? {}, "gatewayEvent.payload"),
+    cursor: input.cursor ?? null,
+    createdAt: ensureIso(input.createdAt, "gatewayEvent.createdAt"),
+  };
+}
+
+export function createInvocationRecord(input) {
+  assertObject(input, "invocation input");
+  assertNonEmptyString(input.threadId, "invocation.threadId");
+  assertEnum(input.agentId, AGENT_ID_VALUES.filter((value) => value !== AgentId.USER), "invocation.agentId");
+  assertEnum(input.status ?? InvocationStatus.QUEUED, INVOCATION_STATUS_VALUES, "invocation.status");
+  assertPositiveInteger(input.attempt ?? 1, "invocation.attempt");
+
+  const queuedAt = ensureIso(input.queuedAt, "invocation.queuedAt");
+
+  return {
+    id: input.id ?? createId("invocation"),
+    threadId: input.threadId,
+    agentId: input.agentId,
+    status: input.status ?? InvocationStatus.QUEUED,
+    attempt: input.attempt ?? 1,
+    triggerMessageId: input.triggerMessageId
+      ? normalizeNonEmptyString(input.triggerMessageId, "invocation.triggerMessageId")
+      : null,
+    outputMessageId: input.outputMessageId
+      ? normalizeNonEmptyString(input.outputMessageId, "invocation.outputMessageId")
+      : null,
+    reason: typeof input.reason === "string" ? input.reason.trim() : "",
+    error: typeof input.error === "string" && input.error.trim().length > 0 ? input.error.trim() : null,
+    queuedAt,
+    startedAt: input.startedAt ? ensureIso(input.startedAt, "invocation.startedAt") : null,
+    finishedAt: input.finishedAt ? ensureIso(input.finishedAt, "invocation.finishedAt") : null,
+    metadata: normalizePlainObject(input.metadata ?? {}, "invocation.metadata"),
+  };
+}
+
 function normalizeCapabilityArray(values) {
   if (!Array.isArray(values) || values.length === 0) {
     throw new Error("agentDescriptor.capabilities must be a non-empty array");
@@ -187,6 +279,32 @@ function normalizeCapabilityArray(values) {
   }
 
   return [...new Set(values)];
+}
+
+function normalizeSource(source, label) {
+  assertObject(source, label);
+  assertEnum(source.type, MESSAGE_SOURCE_TYPE_VALUES, `${label}.type`);
+  assertNonEmptyString(source.id, `${label}.id`);
+
+  return {
+    type: source.type,
+    id: source.id.trim(),
+    name: typeof source.name === "string" && source.name.trim().length > 0 ? source.name.trim() : source.id.trim(),
+  };
+}
+
+function normalizeArray(values, label) {
+  if (!Array.isArray(values)) {
+    throw new Error(`${label} must be an array`);
+  }
+  return values.map((value) => structuredClone(value));
+}
+
+function normalizePlainObject(value, label) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${label} must be an object`);
+  }
+  return structuredClone(value);
 }
 
 function normalizeStringArray(values, label) {
@@ -220,6 +338,11 @@ function assertNonEmptyString(value, label) {
   if (typeof value !== "string" || value.trim().length === 0) {
     throw new Error(`${label} must be a non-empty string`);
   }
+}
+
+function normalizeNonEmptyString(value, label) {
+  assertNonEmptyString(value, label);
+  return value.trim();
 }
 
 function assertPositiveInteger(value, label) {

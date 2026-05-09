@@ -21,7 +21,7 @@ import {
   createRunFailedEvent,
   createSummaryGeneratedEvent,
 } from "../state/events.js";
-import { buildDraftContext, buildReviewContext, buildRevisionContext } from "./contextBuilder.js";
+import { buildDraftContext, buildReviewContext, buildRevisionContext, buildSummaryContext } from "./contextBuilder.js";
 import { runAdapterStep } from "./runner.js";
 
 export async function startRun(taskInput, deps = {}) {
@@ -106,7 +106,7 @@ export async function startRun(taskInput, deps = {}) {
       status: RunStatus.SUMMARIZING,
       currentStep: StepType.SUMMARY,
     });
-    const decision = buildSummaryDecision({ run, messages, maxRounds });
+    const decision = await buildSummaryDecision({ task, run, messages, maxRounds, codex, runnerOptions });
     await store.saveDecision(decision);
     await appendEvent(store, createSummaryGeneratedEvent({ runId: run.id, decisionId: decision.id }));
     run = await saveRunState(store, run, {
@@ -280,12 +280,25 @@ function selectNextTurn({ turn, message, agentTurns, maxAgentTurns }) {
   };
 }
 
-function buildSummaryDecision({ run, messages, maxRounds }) {
-  const draft = messages.find((message) => message.source === AgentId.CODEX && message.kind === "draft");
+async function buildSummaryDecision({ task, run, messages, maxRounds, codex, runnerOptions }) {
+  if (typeof codex.summarize === "function") {
+    const summary = await runAdapterStep(
+      "codex.summary",
+      () => codex.summarize(buildSummaryContext({ task, run, messages })),
+      runnerOptions,
+    );
+
+    return createDecision({
+      runId: run.id,
+      summary: summary.summary,
+      rationale: summary.rationale,
+      openQuestions: summary.openQuestions,
+      nextActions: summary.nextActions,
+    });
+  }
+
   const reviews = messages.filter((message) => message.source === AgentId.COPILOT && message.kind === "review");
   const revisions = messages.filter((message) => message.source === AgentId.CODEX && message.kind === "revision");
-  const latestReview = reviews.at(-1);
-  const latestRevision = revisions.at(-1);
 
   return createDecision({
     runId: run.id,
@@ -293,12 +306,7 @@ function buildSummaryDecision({ run, messages, maxRounds }) {
       maxRounds === 1
         ? "Single-round discussion completed."
         : `Gateway discussion completed after ${run.round} rounds.`,
-    rationale: [
-      draft ? `Codex opening: ${draft.content}` : "Codex opening missing.",
-      latestReview ? `Copilot latest response: ${latestReview.content}` : "Copilot response missing.",
-      latestRevision ? `Codex latest response: ${latestRevision.content}` : "Codex follow-up missing.",
-      `Rounds requested: ${maxRounds}. Copilot turns: ${reviews.length}. Codex turns: ${1 + revisions.length}.`,
-    ].join("\n"),
+    rationale: `Legacy summary fallback. Copilot turns: ${reviews.length}. Codex turns: ${1 + revisions.length}.`,
     openQuestions: [],
     nextActions: ["Promote agreed points into an execution plan", "Tune round limit per task complexity"],
   });

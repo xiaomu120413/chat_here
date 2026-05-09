@@ -55,6 +55,7 @@ test("codex adapter creates gateway message from transport response", async () =
 });
 
 test("orchestrator can use OpenAI-backed Codex through provider config", async () => {
+  let calls = 0;
   const result = await startRun("Use provider config.", {
     providers: {
       codex: {
@@ -67,7 +68,18 @@ test("orchestrator can use OpenAI-backed Codex through provider config", async (
       codex: {
         transport: {
           async createResponse() {
-            return { output_text: "Provider configured Codex output." };
+            calls += 1;
+            if (calls === 1) {
+              return { output_text: "Provider configured Codex output." };
+            }
+            return {
+              output_text: JSON.stringify({
+                summary: "Single-round discussion completed.",
+                rationale: "Provider configured Codex output.",
+                open_questions: [],
+                next_actions: ["Promote agreed points into an execution plan"],
+              }),
+            };
           },
         },
       },
@@ -84,6 +96,7 @@ test("orchestrator can use OpenAI-backed Codex through provider config", async (
 });
 
 test("orchestrator can use OpenAI-backed Codex and Copilot through provider config", async () => {
+  let codexCalls = 0;
   const result = await startRun("Use provider config for both agents.", {
     providers: {
       codex: {
@@ -103,7 +116,18 @@ test("orchestrator can use OpenAI-backed Codex and Copilot through provider conf
           async createResponse(request) {
             assert.equal(request.agent, AgentId.CODEX);
             assert.equal(request.model, "codex-model");
-            return { output_text: "Codex model output." };
+            codexCalls += 1;
+            if (codexCalls === 1) {
+              return { output_text: "Codex model output." };
+            }
+            return {
+              output_text: JSON.stringify({
+                summary: "Single-round discussion completed.",
+                rationale: "Codex model output.",
+                open_questions: [],
+                next_actions: ["Promote agreed points into an execution plan"],
+              }),
+            };
           },
         },
       },
@@ -123,6 +147,39 @@ test("orchestrator can use OpenAI-backed Codex and Copilot through provider conf
   assert.equal(result.messages[0].content, "Use provider config for both agents.");
   assert.equal(result.messages[1].content, "Codex model output.");
   assert.equal(result.messages[2].content, "Copilot model output.");
+});
+
+test("codex adapter can generate a structured real summary", async () => {
+  const config = createProviderConfig({
+    codex: {
+      provider: ProviderId.OPENAI,
+      apiKey: "test-key",
+      model: "gpt-test",
+    },
+  }).codex;
+
+  const adapter = createCodexAdapter(config, {
+    transport: {
+      async createResponse() {
+        return {
+          output_text: JSON.stringify({
+            summary: "Agents converged on a real CLI-backed discussion flow.",
+            rationale: "They agreed to replace fake summaries with a real Codex summary step.",
+            open_questions: ["Should Gateway summary always use Codex?"],
+            next_actions: ["Add a self-test button"],
+          }),
+        };
+      },
+    },
+  });
+
+  const task = createTask({ prompt: "Summarize the discussion." });
+  const run = createRun({ taskId: task.id });
+  const decision = await adapter.summarize({ task, run, messages: [] });
+
+  assert.equal(decision.summary, "Agents converged on a real CLI-backed discussion flow.");
+  assert.equal(decision.openQuestions[0], "Should Gateway summary always use Codex?");
+  assert.equal(decision.nextActions[0], "Add a self-test button");
 });
 
 test("factory can create Tauri OpenAI-backed Codex without frontend api key", async () => {

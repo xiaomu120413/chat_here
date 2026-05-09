@@ -3,118 +3,207 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f2d7ef" />
     <title>Chat Here</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="stylesheet" href="./src/styles.css" />
   </head>
   <body>
-    <main class="im-app" id="im-app">
-      <aside class="sidebar">
-        <div class="sidebar-header">
-          <div class="user-avatar">M</div>
-          <button class="create-btn" id="create-btn" title="创建群聊">+</button>
-        </div>
+    <main class="qq-shell" id="im-app">
+      <nav class="app-rail">
+        <div class="rail-brand">Q</div>
+        <button class="rail-icon active" id="rail-sessions" type="button" aria-label="会话列表" title="会话列表">聊</button>
+        <button class="rail-icon" id="rail-members" type="button" aria-label="群聊详情" title="群聊详情">详</button>
+        <button class="rail-icon" id="rail-self-test" type="button" aria-label="真实链路自检" title="真实链路自检">测</button>
+        <div class="rail-spacer"></div>
+        <div class="rail-avatar">M</div>
+      </nav>
 
-        <div class="session-list" id="session-list"></div>
-        
-        <div class="contacts-section">
-          <div class="contacts-header">联系人</div>
-          <div class="contacts-list" id="contacts-list">
-            <div class="contact-item" data-id="codex">
-              <div class="contact-avatar codex">C</div>
-              <div class="contact-name">Codex</div>
-            </div>
-            <div class="contact-item" data-id="copilot">
-              <div class="contact-avatar copilot">P</div>
-              <div class="contact-name">Copilot</div>
-            </div>
+      <aside class="session-pane">
+        <header class="session-pane-header">
+          <div>
+            <div class="brand-title">Chat Here</div>
+            <div class="brand-subtitle">Codex + Copilot 群组讨论</div>
           </div>
-        </div>
-      </aside>
-
-      <section class="chat-area" id="chat-area">
-        <header class="chat-header">
-          <span class="header-title" id="header-title">Chat Here</span>
+          <button class="pane-action" id="create-btn" type="button" title="新建群聊">+</button>
         </header>
 
-        <div class="chat-messages" id="chat-messages"></div>
+        <label class="search-box">
+          <span>🔎</span>
+          <input id="session-search" type="search" placeholder="搜索会话" />
+        </label>
 
-        <footer class="chat-input">
-          <div class="input-box">
-            <textarea id="message-input" placeholder="发送消息..." rows="1"></textarea>
-            <button class="send-btn" id="send-btn">发送</button>
+        <div class="session-list" id="session-list"></div>
+      </aside>
+
+      <section class="thread-pane">
+        <header class="thread-header">
+          <div class="thread-title-wrap">
+            <div class="thread-title" id="header-title">Architecture Room</div>
+            <div class="thread-meta" id="header-meta">4 位成员 · 等待新话题</div>
           </div>
-          <div class="config-row">
-            <button id="show-config">⚙</button>
-            <span id="provider-health"></span>
-            <div class="config-panel hidden" id="config-panel">
-              <select id="model-input"></select>
-              <select id="copilot-model-input"></select>
-              <input id="round-input" type="number" min="1" max="5" value="1" />
-              <button id="codex-auth-btn">Codex认证</button>
-              <button id="copilot-auth-btn">Copilot认证</button>
-            </div>
+          <div class="thread-actions">
+            <button class="header-icon" id="toggle-info" type="button" title="会话信息">⋯</button>
+          </div>
+        </header>
+
+        <div class="thread-body">
+          <div class="thread-wallpaper"></div>
+          <div class="chat-messages" id="chat-messages"></div>
+        </div>
+
+        <footer class="composer">
+          <div class="composer-toolbar">
+            <button class="tool-btn mention-tool" data-insert="@codex " type="button">@codex</button>
+            <button class="tool-btn mention-tool" data-insert="@copilot " type="button">@copilot</button>
+            <button class="tool-btn mention-tool" data-insert="@all " type="button">@all</button>
+          </div>
+          <div class="composer-box">
+            <textarea id="message-input" placeholder="在群里抛出一个问题，让 Codex 和 Copilot 自由讨论" rows="3"></textarea>
+            <button class="send-btn" id="send-btn" type="button">发送</button>
           </div>
         </footer>
       </section>
 
-      <aside class="detail-panel hidden" id="detail-panel">
-        <header class="detail-header">
-          <span class="detail-title">详情</span>
-          <button class="detail-close" id="detail-close">×</button>
-        </header>
-        
-        <section class="detail-section">
-          <h3>会话成员</h3>
-          <div class="member-info-box" id="member-info-box"></div>
-          <button class="dissolve-btn" id="dissolve-btn">删除会话</button>
-        </section>
-
-        <section class="detail-section" id="progress-section">
-          <h3>运行进度</h3>
-          <div class="progress-list">
-            <div class="progress-item" id="progress-dispatch">
-              <span class="progress-dot"></span>
-              <span class="progress-status">等待</span>
-            </div>
-            <div class="progress-item" id="progress-review">
-              <span class="progress-dot"></span>
-              <span class="progress-status">等待</span>
-            </div>
-            <div class="progress-item" id="progress-decision">
-              <span class="progress-dot"></span>
-              <span class="progress-status">等待</span>
-            </div>
+      <aside class="info-pane" id="detail-panel">
+        <header class="info-header">
+          <div>
+            <div class="info-title">群聊详情</div>
+            <div class="info-subtitle" id="provider-health">正在检查认证状态</div>
           </div>
-          <div class="summary-box" id="summary-box"></div>
+          <button class="pane-action" id="detail-close" type="button" title="收起">×</button>
+        </header>
+
+        <section class="info-section">
+          <div class="section-title">群成员</div>
+          <div class="member-list" id="member-info-box"></div>
         </section>
 
-        <section class="detail-section">
-          <h3>历史记录</h3>
+        <section class="info-section">
+          <div class="section-title">讨论设置</div>
+          <div class="form-grid">
+            <label class="field">
+              <span>Codex 模型</span>
+              <select id="model-input"></select>
+            </label>
+            <label class="field">
+              <span>Copilot 模型</span>
+              <select id="copilot-model-input"></select>
+            </label>
+            <label class="field">
+              <span>最大轮数</span>
+              <input id="round-input" type="number" min="1" max="5" value="3" />
+            </label>
+          </div>
+          <div class="auth-actions">
+            <button id="codex-auth-btn" type="button">Codex Login</button>
+            <button id="copilot-auth-btn" type="button">Copilot Login</button>
+          </div>
+          <button class="secondary-btn diagnostic-btn" id="self-test-btn" type="button">真实链路自检</button>
+        </section>
+
+        <section class="info-section">
+          <div class="section-title">当前状态</div>
+          <div class="progress-board" id="progress-section"></div>
+          <div class="summary-box" id="summary-box">等待新的讨论。</div>
+        </section>
+
+        <section class="info-section">
+          <div class="section-title">移动网关</div>
+          <div class="gateway-card" id="gateway-status-box">Gateway 未启动。</div>
+          <div class="gateway-actions">
+            <button class="secondary-btn" id="gateway-local-btn" type="button">启动本机 Gateway</button>
+            <button class="secondary-btn" id="gateway-lan-btn" type="button">启动局域网 Gateway</button>
+            <button class="danger-btn" id="gateway-stop-btn" type="button">停止 Gateway</button>
+          </div>
+        </section>
+
+        <section class="info-section">
+          <div class="section-title">最近运行</div>
           <div class="history-list" id="history-list"></div>
+        </section>
+
+        <section class="info-section">
+          <button class="danger-btn" id="dissolve-btn" type="button">删除当前会话</button>
         </section>
       </aside>
 
       <div class="modal-overlay hidden" id="modal-overlay">
         <div class="modal-box">
           <div class="modal-header">
-            <span class="modal-title">创建群聊</span>
-            <button class="modal-close" id="modal-close">×</button>
+            <div class="modal-title">新建群聊</div>
+            <button class="pane-action" id="modal-close" type="button">×</button>
           </div>
           <div class="modal-body">
-            <input type="text" id="group-name-input" placeholder="群聊名称" />
-            <div class="member-checkbox-list">
-              <label><input type="checkbox" value="codex" checked />Codex</label>
-              <label><input type="checkbox" value="copilot" checked />Copilot</label>
-              <label><input type="checkbox" value="gateway" checked />Gateway</label>
-            </div>
+            <label class="field">
+              <span>群聊名称</span>
+              <input type="text" id="group-name-input" placeholder="比如：架构评审室" />
+            </label>
           </div>
           <div class="modal-footer">
-            <button class="modal-btn cancel" id="create-cancel">取消</button>
-            <button class="modal-btn confirm" id="create-confirm">创建</button>
+            <button class="secondary-btn" id="create-cancel" type="button">取消</button>
+            <button class="primary-btn" id="create-confirm" type="button">创建</button>
           </div>
         </div>
       </div>
     </main>
+
+    <section class="mobile-shell hidden" id="mobile-app" aria-label="Mobile Gateway Client">
+      <header class="mobile-hero">
+        <div class="mobile-brand-row">
+          <div class="mobile-brand-dot">Q</div>
+          <div>
+            <div class="mobile-kicker">Chat Here</div>
+            <h1>AI 群聊</h1>
+          </div>
+        </div>
+        <div class="mobile-hero-right">
+          <span class="mobile-weather">☼ 晴</span>
+          <span class="mobile-pill" id="mobile-status">offline</span>
+        </div>
+      </header>
+
+      <section class="mobile-card mobile-connect-card">
+        <label class="mobile-field">
+          <span>Gateway URL</span>
+          <input id="mobile-gateway-url" type="url" autocomplete="url" placeholder="http://192.168.1.10:17321" />
+        </label>
+        <label class="mobile-field">
+          <span>Token</span>
+          <input id="mobile-gateway-token" type="password" autocomplete="off" placeholder="Paste Gateway token" />
+        </label>
+        <div class="mobile-actions">
+          <button class="primary-btn" id="mobile-connect-btn" type="button">Connect</button>
+          <button class="secondary-btn" id="mobile-refresh-btn" type="button">Refresh</button>
+        </div>
+        <div class="mobile-note" id="mobile-note">打开 PC 端局域网 Gateway 后，手机访问 PC 端生成的入口链接即可同步讨论。</div>
+      </section>
+
+      <section class="mobile-grid">
+        <aside class="mobile-card mobile-thread-list-wrap">
+          <div class="mobile-section-head">
+            <strong>消息</strong>
+            <button class="secondary-btn" id="mobile-new-thread-btn" type="button">+</button>
+          </div>
+          <input class="mobile-inline-input" id="mobile-thread-title" type="text" placeholder="搜索 / 新建群名" />
+          <div class="mobile-thread-list" id="mobile-thread-list"></div>
+        </aside>
+
+        <section class="mobile-card mobile-chat-card">
+          <div class="mobile-section-head">
+            <div>
+              <strong id="mobile-thread-name">No room selected</strong>
+              <div class="mobile-subtitle" id="mobile-thread-meta">Connect first.</div>
+            </div>
+          </div>
+          <div class="mobile-message-list" id="mobile-message-list"></div>
+          <div class="mobile-compose">
+            <textarea id="mobile-message-input" rows="3" placeholder="Send a message to this room"></textarea>
+            <button class="send-btn" id="mobile-send-btn" type="button">Send</button>
+          </div>
+        </section>
+      </section>
+    </section>
 
     <script type="module" src="./src/main.js"></script>
   </body>

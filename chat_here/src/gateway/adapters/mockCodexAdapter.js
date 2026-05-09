@@ -60,6 +60,32 @@ export function createMockCodexAdapter(options = {}) {
         references: ["copilot.review", `gateway.next:${parsed.next}`],
       });
     },
+
+    async summarize(context) {
+      await maybeDelay(behavior.summaryDelayMs);
+      maybeFail(behavior.summaryError);
+
+      return {
+        summary:
+          behavior.summaryText ??
+          (context.run.round === 1
+            ? "Single-round discussion completed."
+            : `Gateway discussion completed after ${context.run.round} rounds.`),
+        rationale:
+          behavior.summaryRationale ??
+          [
+            context.messages.find((message) => message.source === AgentId.CODEX)?.content ?? "Codex opening missing.",
+            context.messages.filter((message) => message.source === AgentId.COPILOT).at(-1)?.content ??
+              "Copilot response missing.",
+          ].join("\n"),
+        openQuestions: behavior.openQuestions ?? [],
+        nextActions:
+          behavior.nextActions ?? [
+            "Promote agreed points into an execution plan",
+            "Tune round limit per task complexity",
+          ],
+      };
+    },
   };
 }
 

@@ -1,4 +1,5 @@
 import { createStoredEvent } from "./eventRecord.js";
+import { createGatewayEventRecord, createInvocationRecord } from "../schema/index.js";
 
 const DEFAULT_KEY = "gateway-store";
 
@@ -8,6 +9,10 @@ const EMPTY_DB = Object.freeze({
   eventsByRun: {},
   messagesByRun: {},
   decisions: {},
+  threads: {},
+  threadMessagesByThread: {},
+  threadEventsByThread: {},
+  invocations: {},
 });
 
 export function createLocalStorageStore(key = DEFAULT_KEY) {
@@ -50,6 +55,63 @@ export function createLocalStorageStore(key = DEFAULT_KEY) {
       return decision;
     },
 
+    async saveThread(thread) {
+      const db = readDb(key);
+      db.threads[thread.id] = thread;
+      writeDb(key, db);
+      return thread;
+    },
+
+    async appendThreadMessage(message) {
+      const db = readDb(key);
+      db.threadMessagesByThread[message.threadId] = db.threadMessagesByThread[message.threadId] ?? [];
+      db.threadMessagesByThread[message.threadId].push(message);
+      touchThread(db, message.threadId, message.createdAt);
+      writeDb(key, db);
+      return message;
+    },
+
+    async appendThreadEvent(event) {
+      const db = readDb(key);
+      const events = db.threadEventsByThread[event.threadId] ?? [];
+      const record = createGatewayEventRecord({
+        ...event,
+        cursor: event.cursor ?? events.length + 1,
+      });
+      events.push(record);
+      db.threadEventsByThread[record.threadId] = events;
+      writeDb(key, db);
+      return record;
+    },
+
+    async saveInvocation(invocation) {
+      const db = readDb(key);
+      const record = createInvocationRecord(invocation);
+      db.invocations[record.id] = record;
+      writeDb(key, db);
+      return record;
+    },
+
+    async updateInvocation(invocationId, updates) {
+      const db = readDb(key);
+      const current = db.invocations[invocationId];
+      if (!current) {
+        throw new Error(`invocation not found: ${invocationId}`);
+      }
+
+      const next = createInvocationRecord({
+        ...current,
+        ...updates,
+        id: current.id,
+        threadId: current.threadId,
+        agentId: updates.agentId ?? current.agentId,
+        queuedAt: current.queuedAt,
+      });
+      db.invocations[invocationId] = next;
+      writeDb(key, db);
+      return next;
+    },
+
     async getTask(taskId) {
       return readDb(key).tasks[taskId] ?? null;
     },
@@ -74,6 +136,43 @@ export function createLocalStorageStore(key = DEFAULT_KEY) {
       const db = readDb(key);
       return Object.values(db.runs).sort((a, b) => b.startedAt.localeCompare(a.startedAt));
     },
+
+    async getThread(threadId) {
+      return readDb(key).threads[threadId] ?? null;
+    },
+
+    async listThreads() {
+      const db = readDb(key);
+      return Object.values(db.threads).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    },
+
+    async getThreadSnapshot(threadId) {
+      const db = readDb(key);
+      const thread = db.threads[threadId] ?? null;
+      if (!thread) {
+        return null;
+      }
+
+      return {
+        thread,
+        messages: db.threadMessagesByThread[threadId] ?? [],
+        events: db.threadEventsByThread[threadId] ?? [],
+        invocations: Object.values(db.invocations)
+          .filter((invocation) => invocation.threadId === threadId)
+          .sort((a, b) => a.queuedAt.localeCompare(b.queuedAt)),
+      };
+    },
+
+    async getInvocation(invocationId) {
+      return readDb(key).invocations[invocationId] ?? null;
+    },
+
+    async listThreadInvocations(threadId) {
+      const db = readDb(key);
+      return Object.values(db.invocations)
+        .filter((invocation) => invocation.threadId === threadId)
+        .sort((a, b) => a.queuedAt.localeCompare(b.queuedAt));
+    },
   };
 }
 
@@ -91,6 +190,10 @@ function readDb(key) {
       eventsByRun: parsed.eventsByRun ?? {},
       messagesByRun: parsed.messagesByRun ?? {},
       decisions: parsed.decisions ?? {},
+      threads: parsed.threads ?? {},
+      threadMessagesByThread: parsed.threadMessagesByThread ?? {},
+      threadEventsByThread: parsed.threadEventsByThread ?? {},
+      invocations: parsed.invocations ?? {},
     };
   } catch {
     return structuredClone(EMPTY_DB);
@@ -99,4 +202,16 @@ function readDb(key) {
 
 function writeDb(key, db) {
   window.localStorage.setItem(key, JSON.stringify(db));
+}
+
+function touchThread(db, threadId, updatedAt) {
+  const thread = db.threads[threadId];
+  if (!thread) {
+    return;
+  }
+
+  db.threads[threadId] = {
+    ...thread,
+    updatedAt,
+  };
 }

@@ -4,16 +4,21 @@ import assert from "node:assert/strict";
 import {
   AgentId,
   Capability,
+  InvocationStatus,
   MessageKind,
   RunStatus,
   StepType,
   createAgentDescriptor,
   createDecision,
   createGatewayError,
+  createGatewayEventRecord,
+  createInvocationRecord,
   createMessage,
   createRun,
   createRunStep,
   createTask,
+  createThread,
+  createThreadMessage,
 } from "../schema/index.js";
 
 test("createTask returns normalized task", () => {
@@ -143,5 +148,85 @@ test("schema rejects invalid dates and round values", () => {
         round: 0,
       }),
     /message.round must be a positive integer/,
+  );
+});
+
+test("createThread returns a mobile-ready discussion thread", () => {
+  const thread = createThread({
+    title: "Gateway planning",
+    createdBy: { type: "human", id: "user", name: "Mu" },
+    metadata: { entrypoint: "pc" },
+  });
+
+  assert.match(thread.id, /^thread_/);
+  assert.equal(thread.status, "active");
+  assert.equal(thread.createdBy.type, "human");
+  assert.equal(thread.metadata.entrypoint, "pc");
+});
+
+test("createThreadMessage preserves routing, reply and a2a fields", () => {
+  const message = createThreadMessage({
+    threadId: "thread_1",
+    kind: "user",
+    source: { type: "human", id: "user" },
+    targetAgents: ["codex", "copilot"],
+    replyTo: "msg_parent",
+    content: " @all 继续讨论 ",
+    a2a: { depth: 1, parentMessageId: "msg_parent" },
+  });
+
+  assert.equal(message.threadId, "thread_1");
+  assert.equal(message.content, "@all 继续讨论");
+  assert.deepEqual(message.targetAgents, ["codex", "copilot"]);
+  assert.equal(message.replyTo, "msg_parent");
+  assert.equal(message.a2a.depth, 1);
+
+  assert.throws(
+    () =>
+      createThreadMessage({
+        threadId: "thread_1",
+        kind: "user",
+        source: { type: "bot", id: "codex" },
+        content: "bad source",
+      }),
+    /threadMessage.source.type must be one of/,
+  );
+});
+
+test("createGatewayEventRecord validates thread event shape", () => {
+  const event = createGatewayEventRecord({
+    threadId: "thread_1",
+    type: "message.created",
+    payload: { messageId: "msg_1" },
+    cursor: 7,
+  });
+
+  assert.equal(event.threadId, "thread_1");
+  assert.equal(event.cursor, 7);
+  assert.equal(event.payload.messageId, "msg_1");
+  assert.match(event.id, /^event_/);
+});
+
+test("createInvocationRecord captures agent execution lifecycle fields", () => {
+  const invocation = createInvocationRecord({
+    threadId: "thread_1",
+    agentId: AgentId.CODEX,
+    triggerMessageId: "msg_user",
+    reason: "explicit @codex mention",
+  });
+
+  assert.match(invocation.id, /^invocation_/);
+  assert.equal(invocation.status, InvocationStatus.QUEUED);
+  assert.equal(invocation.attempt, 1);
+  assert.equal(invocation.triggerMessageId, "msg_user");
+  assert.equal(invocation.outputMessageId, null);
+
+  assert.throws(
+    () =>
+      createInvocationRecord({
+        threadId: "thread_1",
+        agentId: "user",
+      }),
+    /invocation.agentId must be one of/,
   );
 });

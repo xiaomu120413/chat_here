@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Chat Here">
+  <defs>
+    <linearGradient id="bg" x1="54" y1="32" x2="458" y2="480" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#f3a9cf"/>
+      <stop offset="0.52" stop-color="#f6dcc2"/>
+      <stop offset="1" stop-color="#b8edc8"/>
+    </linearGradient>
+    <linearGradient id="bubble" x1="122" y1="128" x2="394" y2="362" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#252b45"/>
+      <stop offset="1" stop-color="#7867da"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="122" fill="url(#bg)"/>
+  <path d="M128 160c0-35 27-62 62-62h133c64 0 115 51 115 115S387 328 323 328h-80l-88 72c-16 13-40 3-40-19v-72c-22-22-35-54-35-91 0-22 19-40 40-40h8v-18Z" fill="rgba(255,255,255,.72)"/>
+  <path d="M154 174c0-24 19-43 43-43h125c48 0 86 38 86 86s-38 86-86 86h-91l-66 56v-75c-22-16-35-40-35-67 0-24 0-43 24-43Z" fill="url(#bubble)"/>
+  <circle cx="218" cy="219" r="21" fill="#fff"/>
+  <circle cx="282" cy="219" r="21" fill="#fff"/>
+  <circle cx="346" cy="219" r="21" fill="#fff"/>
+</svg>
