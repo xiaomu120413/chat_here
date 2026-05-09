@@ -1,4 +1,5 @@
 import { createGatewayApiClient, createGatewayEventStream } from "../gateway/http/client.js";
+import { chooseSelectedThreadId, filterThreads, getThreadPreview } from "./threadViewModel.js";
 
 const STORAGE_KEY = "chat_here_mobile_gateway";
 
@@ -145,18 +146,7 @@ async function refreshThreadPreviews() {
 }
 
 function chooseSelectedThread() {
-  if (!state.threads.length) {
-    state.selectedThreadId = "";
-    return;
-  }
-  if (state.threads.some((thread) => thread.id === state.selectedThreadId)) {
-    return;
-  }
-  const firstActive = state.threads.find((thread) => {
-    const snapshot = state.threadSnapshots.get(thread.id);
-    return snapshot?.messages?.length;
-  });
-  state.selectedThreadId = firstActive?.id ?? state.threads[0].id;
+  state.selectedThreadId = chooseSelectedThreadId(state.threads, state.threadSnapshots, state.selectedThreadId);
 }
 
 async function createThread() {
@@ -264,17 +254,7 @@ function renderThreads() {
     return;
   }
 
-  const filter = elements.threadTitle.value.trim().toLowerCase();
-  const visibleThreads = filter
-    ? state.threads.filter((thread) => {
-        const snapshot = state.threadSnapshots.get(thread.id);
-        const lastMessage = snapshot?.messages?.at(-1);
-        return (
-          thread.title.toLowerCase().includes(filter) ||
-          (lastMessage?.content ?? "").toLowerCase().includes(filter)
-        );
-      })
-    : state.threads;
+  const visibleThreads = filterThreads(state.threads, state.threadSnapshots, elements.threadTitle.value);
 
   if (!visibleThreads.length) {
     elements.threadList.append(createEmpty("没有匹配会话，点 + 可新建。"));
@@ -283,7 +263,6 @@ function renderThreads() {
 
   for (const thread of visibleThreads) {
     const snapshot = state.threadSnapshots.get(thread.id);
-    const lastMessage = snapshot?.messages?.at(-1) ?? null;
     const item = document.createElement("button");
     item.type = "button";
     item.className = `mobile-thread-item${thread.id === state.selectedThreadId ? " active" : ""}`;
@@ -293,7 +272,7 @@ function renderThreads() {
     title.textContent = thread.title;
     const preview = document.createElement("span");
     preview.className = "mobile-thread-preview";
-    preview.textContent = lastMessage ? compactText(lastMessage.content, 34) : "暂无消息";
+    preview.textContent = getThreadPreview(thread, snapshot);
     const meta = document.createElement("small");
     meta.textContent = formatTime(thread.updatedAt);
     item.append(title, preview, meta);
@@ -393,14 +372,6 @@ function formatTime(value) {
     return value;
   }
   return date.toLocaleString([], { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
-}
-
-function compactText(value, maxLength) {
-  const normalized = String(value ?? "").replace(/\s+/g, " ").trim();
-  if (normalized.length <= maxLength) {
-    return normalized;
-  }
-  return `${normalized.slice(0, maxLength - 1)}…`;
 }
 
 function getErrorMessage(error) {
