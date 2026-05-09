@@ -52,3 +52,10 @@ export function getMobileSendDisabledReason(input) {
   }
   return "";
 }
+
+export function getMobileConnectionLabel(input) {
+  if (!input?.connected) {
+    return "离线";
+  }
+  return input?.liveConnected ? "实时" : "在线";
+}

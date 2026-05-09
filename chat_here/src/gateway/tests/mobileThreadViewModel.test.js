@@ -6,6 +6,7 @@ import {
   chooseSelectedThreadId,
   compactText,
   filterThreads,
+  getMobileConnectionLabel,
   getMobileSendDisabledReason,
   getThreadPreview,
 } from "../../mobile/threadViewModel.js";
@@ -64,4 +65,10 @@ test("mobile composer exposes actionable disabled reasons", () => {
     canSendMobileMessage({ connected: true, selectedThreadId: "thread_1", content: "hello" }),
     true,
   );
+});
+
+test("mobile connection label distinguishes API and live sync", () => {
+  assert.equal(getMobileConnectionLabel({ connected: false }), "离线");
+  assert.equal(getMobileConnectionLabel({ connected: true, liveConnected: false }), "在线");
+  assert.equal(getMobileConnectionLabel({ connected: true, liveConnected: true }), "实时");
 });

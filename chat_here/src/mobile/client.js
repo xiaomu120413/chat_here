@@ -3,6 +3,7 @@ import {
   canSendMobileMessage,
   chooseSelectedThreadId,
   filterThreads,
+  getMobileConnectionLabel,
   getMobileSendDisabledReason,
   getThreadPreview,
 } from "./threadViewModel.js";
@@ -15,6 +16,7 @@ let state = {
   client: null,
   stream: null,
   connected: false,
+  liveConnected: false,
   threads: [],
   threadSnapshots: new Map(),
   selectedThreadId: "",
@@ -108,6 +110,7 @@ async function connect() {
   }
 
   closeStream();
+  state.liveConnected = false;
   state.client = createGatewayApiClient({ baseUrl, token });
   setBusy(true);
   try {
@@ -119,6 +122,7 @@ async function connect() {
     setNote("已连接，消息会实时同步。");
   } catch (error) {
     state.connected = false;
+    state.liveConnected = false;
     state.client = null;
     setNote(`连接失败：${getErrorMessage(error)}`);
   } finally {
@@ -242,8 +246,16 @@ function openEventStream(baseUrl, token) {
     state.stream = createGatewayEventStream({ baseUrl, token });
     state.stream.addEventListener("message.created", refreshAfterEvent);
     state.stream.addEventListener("thread.created", refreshAfterEvent);
-    state.stream.addEventListener("gateway.connected", () => setNote("实时通道已连接。"));
-    state.stream.onerror = () => setNote("实时通道已断开，可手动刷新。");
+    state.stream.addEventListener("gateway.connected", () => {
+      state.liveConnected = true;
+      setNote("实时通道已连接。");
+      render();
+    });
+    state.stream.onerror = () => {
+      state.liveConnected = false;
+      setNote("实时通道已断开，可手动刷新。");
+      render();
+    };
   } catch (error) {
     setNote(`实时通道不可用：${getErrorMessage(error)}`);
   }
@@ -265,11 +277,12 @@ function closeStream() {
     state.stream.close();
     state.stream = null;
   }
+  state.liveConnected = false;
 }
 
 function render() {
   document.getElementById("mobile-app")?.classList.toggle("connected", state.connected);
-  elements.status.textContent = state.connected ? "online" : "offline";
+  elements.status.textContent = getMobileConnectionLabel(state);
   elements.status.classList.toggle("online", state.connected);
   renderThreads();
   renderSnapshot();
