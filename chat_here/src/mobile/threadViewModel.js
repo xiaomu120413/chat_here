@@ -32,3 +32,23 @@ export function compactText(value, maxLength) {
   }
   return `${normalized.slice(0, Math.max(0, maxLength - 1))}…`;
 }
+
+export function canSendMobileMessage(input) {
+  return !getMobileSendDisabledReason(input);
+}
+
+export function getMobileSendDisabledReason(input) {
+  if (input?.sending) {
+    return "消息正在发送中";
+  }
+  if (!input?.connected) {
+    return "请先连接 Gateway";
+  }
+  if (!input?.selectedThreadId) {
+    return "请先选择一个会话";
+  }
+  if (!String(input?.content ?? "").trim()) {
+    return "请输入消息内容";
+  }
+  return "";
+}

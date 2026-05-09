@@ -1,7 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { chooseSelectedThreadId, compactText, filterThreads, getThreadPreview } from "../../mobile/threadViewModel.js";
+import {
+  canSendMobileMessage,
+  chooseSelectedThreadId,
+  compactText,
+  filterThreads,
+  getMobileSendDisabledReason,
+  getThreadPreview,
+} from "../../mobile/threadViewModel.js";
 
 test("mobile thread view model chooses the first thread with messages", () => {
   const threads = [
@@ -35,4 +42,26 @@ test("mobile thread view model filters by title and latest message preview", () 
 test("mobile thread preview compacts whitespace and truncates text", () => {
   assert.equal(compactText("hello\n  gateway", 20), "hello gateway");
   assert.equal(compactText("123456789", 6), "12345…");
+});
+
+test("mobile composer exposes actionable disabled reasons", () => {
+  assert.equal(getMobileSendDisabledReason({ connected: false }), "请先连接 Gateway");
+  assert.equal(getMobileSendDisabledReason({ connected: true, selectedThreadId: "" }), "请先选择一个会话");
+  assert.equal(
+    getMobileSendDisabledReason({ connected: true, selectedThreadId: "thread_1", content: "   " }),
+    "请输入消息内容",
+  );
+  assert.equal(
+    getMobileSendDisabledReason({
+      connected: true,
+      selectedThreadId: "thread_1",
+      content: "hello",
+      sending: true,
+    }),
+    "消息正在发送中",
+  );
+  assert.equal(
+    canSendMobileMessage({ connected: true, selectedThreadId: "thread_1", content: "hello" }),
+    true,
+  );
 });

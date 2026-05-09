@@ -1,5 +1,11 @@
 import { createGatewayApiClient, createGatewayEventStream } from "../gateway/http/client.js";
-import { chooseSelectedThreadId, filterThreads, getThreadPreview } from "./threadViewModel.js";
+import {
+  canSendMobileMessage,
+  chooseSelectedThreadId,
+  filterThreads,
+  getMobileSendDisabledReason,
+  getThreadPreview,
+} from "./threadViewModel.js";
 
 const STORAGE_KEY = "chat_here_mobile_gateway";
 
@@ -12,6 +18,8 @@ let state = {
   threadSnapshots: new Map(),
   selectedThreadId: "",
   snapshot: null,
+  busy: false,
+  sendingMessage: false,
 };
 
 export function shouldUseMobileGatewayClient() {
@@ -65,6 +73,7 @@ function bindEvents() {
   elements.newThreadBtn.addEventListener("click", createThread);
   elements.threadTitle.addEventListener("input", renderThreads);
   elements.sendBtn.addEventListener("click", sendMessage);
+  elements.messageInput.addEventListener("input", renderControls);
   elements.messageInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
@@ -101,6 +110,7 @@ async function connect() {
     setNote("Connected. Threads and messages are live.");
   } catch (error) {
     state.connected = false;
+    state.client = null;
     setNote(`Connect failed: ${getErrorMessage(error)}`);
   } finally {
     setBusy(false);
@@ -188,10 +198,18 @@ async function loadSelectedThread() {
 
 async function sendMessage() {
   const content = elements.messageInput.value.trim();
-  if (!state.client || !state.selectedThreadId || !content) {
+  const disabledReason = getMobileSendDisabledReason({
+    connected: state.connected,
+    selectedThreadId: state.selectedThreadId,
+    content,
+    sending: state.sendingMessage,
+  });
+  if (disabledReason) {
+    setNote(disabledReason);
     return;
   }
-  elements.sendBtn.disabled = true;
+  state.sendingMessage = true;
+  renderControls();
   try {
     await state.client.sendMessage(state.selectedThreadId, {
       kind: "user",
@@ -205,7 +223,8 @@ async function sendMessage() {
   } catch (error) {
     setNote(`Send failed: ${getErrorMessage(error)}`);
   } finally {
-    elements.sendBtn.disabled = false;
+    state.sendingMessage = false;
+    render();
   }
 }
 
@@ -245,6 +264,7 @@ function render() {
   elements.status.classList.toggle("online", state.connected);
   renderThreads();
   renderSnapshot();
+  renderControls();
 }
 
 function renderThreads() {
@@ -317,9 +337,20 @@ function createEmpty(text) {
 }
 
 function setBusy(busy) {
-  elements.connectBtn.disabled = busy;
-  elements.refreshBtn.disabled = busy;
-  elements.newThreadBtn.disabled = busy;
+  state.busy = busy;
+  renderControls();
+}
+
+function renderControls() {
+  elements.connectBtn.disabled = state.busy;
+  elements.refreshBtn.disabled = state.busy || !state.connected;
+  elements.newThreadBtn.disabled = state.busy || !state.connected;
+  elements.sendBtn.disabled = !canSendMobileMessage({
+    connected: state.connected,
+    selectedThreadId: state.selectedThreadId,
+    content: elements.messageInput.value,
+    sending: state.busy || state.sendingMessage,
+  });
 }
 
 function setNote(text) {
