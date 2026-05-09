@@ -94,7 +94,7 @@ async function connect() {
   const baseUrl = elements.gatewayUrl.value.trim().replace(/\/+$/, "");
   const token = elements.gatewayToken.value.trim();
   if (!baseUrl || !token) {
-    setNote("Gateway URL and token are required.");
+    setNote("需要填写 Gateway URL 和 Token。");
     return;
   }
 
@@ -107,11 +107,11 @@ async function connect() {
     state.connected = true;
     openEventStream(baseUrl, token);
     await refreshAll();
-    setNote("Connected. Threads and messages are live.");
+    setNote("已连接，消息会实时同步。");
   } catch (error) {
     state.connected = false;
     state.client = null;
-    setNote(`Connect failed: ${getErrorMessage(error)}`);
+    setNote(`连接失败：${getErrorMessage(error)}`);
   } finally {
     setBusy(false);
     render();
@@ -120,7 +120,7 @@ async function connect() {
 
 async function refreshAll() {
   if (!state.client) {
-    setNote("Connect to a Gateway first.");
+    setNote("请先连接 Gateway。");
     return;
   }
   setBusy(true);
@@ -131,7 +131,7 @@ async function refreshAll() {
     chooseSelectedThread();
     await loadSelectedThread();
   } catch (error) {
-    setNote(`Refresh failed: ${getErrorMessage(error)}`);
+    setNote(`刷新失败：${getErrorMessage(error)}`);
   } finally {
     setBusy(false);
     render();
@@ -161,10 +161,10 @@ function chooseSelectedThread() {
 
 async function createThread() {
   if (!state.client) {
-    setNote("Connect to a Gateway first.");
+    setNote("请先连接 Gateway。");
     return;
   }
-  const title = elements.threadTitle.value.trim() || "Mobile discussion";
+  const title = elements.threadTitle.value.trim() || "移动端讨论";
   setBusy(true);
   try {
     const created = await state.client.createThread({
@@ -176,7 +176,7 @@ async function createThread() {
     state.selectedThreadId = created.thread.id;
     await refreshAll();
   } catch (error) {
-    setNote(`Create room failed: ${getErrorMessage(error)}`);
+    setNote(`创建会话失败：${getErrorMessage(error)}`);
   } finally {
     setBusy(false);
   }
@@ -191,7 +191,7 @@ async function loadSelectedThread() {
   try {
     state.snapshot = await state.client.getThread(state.selectedThreadId);
   } catch (error) {
-    setNote(`Load room failed: ${getErrorMessage(error)}`);
+    setNote(`加载会话失败：${getErrorMessage(error)}`);
   }
   render();
 }
@@ -221,7 +221,7 @@ async function sendMessage() {
     elements.messageInput.value = "";
     await loadSelectedThread();
   } catch (error) {
-    setNote(`Send failed: ${getErrorMessage(error)}`);
+    setNote(`发送失败：${getErrorMessage(error)}`);
   } finally {
     state.sendingMessage = false;
     render();
@@ -233,10 +233,10 @@ function openEventStream(baseUrl, token) {
     state.stream = createGatewayEventStream({ baseUrl, token });
     state.stream.addEventListener("message.created", refreshAfterEvent);
     state.stream.addEventListener("thread.created", refreshAfterEvent);
-    state.stream.addEventListener("gateway.connected", () => setNote("Live stream connected."));
-    state.stream.onerror = () => setNote("Live stream disconnected. Manual refresh still works.");
+    state.stream.addEventListener("gateway.connected", () => setNote("实时通道已连接。"));
+    state.stream.onerror = () => setNote("实时通道已断开，可手动刷新。");
   } catch (error) {
-    setNote(`Live stream unavailable: ${getErrorMessage(error)}`);
+    setNote(`实时通道不可用：${getErrorMessage(error)}`);
   }
 }
 
@@ -270,7 +270,7 @@ function render() {
 function renderThreads() {
   elements.threadList.innerHTML = "";
   if (!state.threads.length) {
-    elements.threadList.append(createEmpty("No rooms yet."));
+    elements.threadList.append(createEmpty("还没有会话。"));
     return;
   }
 
@@ -303,14 +303,14 @@ function renderThreads() {
 function renderSnapshot() {
   const thread = state.snapshot?.thread ?? null;
   const messages = state.snapshot?.messages ?? [];
-  elements.threadName.textContent = thread?.title ?? "No room selected";
+  elements.threadName.textContent = thread?.title ?? "未选择会话";
   elements.threadMeta.textContent = thread
-    ? `${messages.length} messages · ${formatTime(thread.updatedAt)}`
-    : "Connect first.";
+    ? `${messages.length} 条消息 · ${formatTime(thread.updatedAt)}`
+    : "请先连接。";
 
   elements.messageList.innerHTML = "";
   if (!messages.length) {
-    elements.messageList.append(createEmpty(thread ? "No messages yet." : "Select a room to read messages."));
+    elements.messageList.append(createEmpty(thread ? "还没有消息。" : "选择一个会话查看消息。"));
     return;
   }
 
@@ -319,7 +319,7 @@ function renderSnapshot() {
     row.className = `mobile-message ${message.source?.type ?? "system"}`;
     const meta = document.createElement("div");
     meta.className = "mobile-message-meta";
-    meta.textContent = `${message.source?.name ?? message.source?.id ?? "Unknown"} · ${message.kind} · ${formatTime(message.createdAt)}`;
+    meta.textContent = `${message.source?.name ?? message.source?.id ?? "未知"} · ${message.kind} · ${formatTime(message.createdAt)}`;
     const body = document.createElement("div");
     body.className = "mobile-message-body";
     body.textContent = message.content;

@@ -17,6 +17,8 @@ test("HTML declares PWA manifest and mobile viewport", async () => {
   assert.match(html, /id="mobile-app"/);
   assert.match(html, /id="mobile-gateway-url"/);
   assert.match(html, /id="mobile-gateway-token"/);
+  assert.match(html, /输入消息，Enter 发送/);
+  assert.match(html, />发送<\/button>/);
 });
 
 test("PWA manifest is installable enough for browser entry", async () => {
