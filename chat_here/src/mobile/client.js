@@ -51,6 +51,7 @@ function collectElements() {
     gatewayUrl: document.getElementById("mobile-gateway-url"),
     gatewayToken: document.getElementById("mobile-gateway-token"),
     connectBtn: document.getElementById("mobile-connect-btn"),
+    disconnectBtn: document.getElementById("mobile-disconnect-btn"),
     refreshBtn: document.getElementById("mobile-refresh-btn"),
     newThreadBtn: document.getElementById("mobile-new-thread-btn"),
     threadTitle: document.getElementById("mobile-thread-title"),
@@ -80,6 +81,7 @@ function restoreConfig() {
 
 function bindEvents() {
   elements.connectBtn.addEventListener("click", connect);
+  elements.disconnectBtn.addEventListener("click", disconnect);
   elements.refreshBtn.addEventListener("click", refreshAll);
   elements.newThreadBtn.addEventListener("click", createThread);
   elements.threadTitle.addEventListener("input", renderThreads);
@@ -99,6 +101,22 @@ function bindEvents() {
     state.selectedThreadId = item.dataset.threadId;
     await loadSelectedThread();
   });
+}
+
+function disconnect() {
+  closeStream();
+  state.client = null;
+  state.connected = false;
+  state.liveConnected = false;
+  state.threads = [];
+  state.threadSnapshots = new Map();
+  state.selectedThreadId = "";
+  state.snapshot = null;
+  state.sendingMessage = false;
+  localStorage.removeItem(STORAGE_KEY);
+  elements.gatewayToken.value = "";
+  setNote("已断开，并清除本机保存的连接凭据。");
+  render();
 }
 
 async function connect() {
@@ -365,6 +383,7 @@ function setBusy(busy) {
 
 function renderControls() {
   elements.connectBtn.disabled = state.busy;
+  elements.disconnectBtn.disabled = state.busy || (!state.connected && !elements.gatewayToken.value.trim());
   elements.refreshBtn.disabled = state.busy || !state.connected;
   elements.newThreadBtn.disabled = state.busy || !state.connected;
   elements.sendBtn.disabled = !canSendMobileMessage({

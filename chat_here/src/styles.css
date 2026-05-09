@@ -385,6 +385,21 @@ button:disabled {
   color: #0c9f61;
 }
 
+.mobile-disconnect-btn {
+  min-height: 30px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.54);
+  color: rgba(23, 27, 44, 0.62);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.mobile-disconnect-btn:not(:disabled):hover {
+  background: rgba(255, 255, 255, 0.82);
+  color: #a53d4e;
+}
+
 .mobile-connect-card {
   width: 100%;
   margin-inline: 0;
