@@ -101,6 +101,7 @@ function collectElements() {
     gatewayStatusBox: document.getElementById("gateway-status-box"),
     gatewayLocalBtn: document.getElementById("gateway-local-btn"),
     gatewayLanBtn: document.getElementById("gateway-lan-btn"),
+    gatewayCopyMobileBtn: document.getElementById("gateway-copy-mobile-btn"),
     gatewayStopBtn: document.getElementById("gateway-stop-btn"),
   };
 }
@@ -143,6 +144,7 @@ function bindEvents() {
   });
   elements.gatewayLocalBtn.addEventListener("click", () => startGateway(false));
   elements.gatewayLanBtn.addEventListener("click", () => startGateway(true));
+  elements.gatewayCopyMobileBtn.addEventListener("click", copyMobileEntry);
   elements.gatewayStopBtn.addEventListener("click", stopGateway);
   syncRuntimeOnlyControls();
   elements.modelInput.addEventListener("change", syncCurrentSessionConfig);
@@ -656,6 +658,8 @@ function renderGatewayStatus(status) {
       streamUrl: "",
     };
     elements.gatewayStatusBox.textContent = "Gateway 未启动。\n局域网模式不会自动开启，需要手动点击。";
+    elements.gatewayCopyMobileBtn.disabled = true;
+    elements.gatewayCopyMobileBtn.dataset.mobileEntryUrl = "";
     return;
   }
 
@@ -674,13 +678,33 @@ function renderGatewayStatus(status) {
     `状态：运行中 (${status.exposeLan ? "局域网" : "本机"})`,
     `本机：${status.localUrl}`,
   ];
+  let mobileEntryUrl = "";
   if (status.lanUrl) {
     lines.push(`手机：${status.lanUrl}`);
-    lines.push(`手机入口：${buildMobileEntryUrl(status.lanUrl, status.token)}`);
+    mobileEntryUrl = buildMobileEntryUrl(status.lanUrl, status.token);
+    lines.push(`手机入口：${mobileEntryUrl}`);
   }
   lines.push(`Token：${status.token}`);
   lines.push("说明：手机访问 API 时需要 Authorization: Bearer <Token>。");
   elements.gatewayStatusBox.textContent = lines.join("\n");
+  elements.gatewayCopyMobileBtn.disabled = !mobileEntryUrl;
+  elements.gatewayCopyMobileBtn.dataset.mobileEntryUrl = mobileEntryUrl;
+}
+
+async function copyMobileEntry() {
+  const mobileEntryUrl = elements.gatewayCopyMobileBtn.dataset.mobileEntryUrl || "";
+  if (!mobileEntryUrl) {
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(mobileEntryUrl);
+    elements.gatewayCopyMobileBtn.textContent = "已复制";
+    window.setTimeout(() => {
+      elements.gatewayCopyMobileBtn.textContent = "复制手机入口";
+    }, 1200);
+  } catch (error) {
+    elements.gatewayStatusBox.textContent = `${elements.gatewayStatusBox.textContent}\n复制失败：${getErrorMessage(error)}`;
+  }
 }
 
 function buildMobileEntryUrl(gatewayUrl, token) {
@@ -1022,6 +1046,7 @@ function setGatewayButtonsDisabled(disabled) {
   elements.gatewayLocalBtn.disabled = disabled;
   elements.gatewayLanBtn.disabled = disabled;
   elements.gatewayStopBtn.disabled = disabled;
+  elements.gatewayCopyMobileBtn.disabled = disabled || !elements.gatewayCopyMobileBtn.dataset.mobileEntryUrl;
 }
 
 function syncRuntimeOnlyControls() {
@@ -1034,6 +1059,7 @@ function syncRuntimeOnlyControls() {
     elements.railSelfTest,
     elements.gatewayLocalBtn,
     elements.gatewayLanBtn,
+    elements.gatewayCopyMobileBtn,
     elements.gatewayStopBtn,
     document.getElementById("codex-auth-btn"),
     document.getElementById("copilot-auth-btn"),

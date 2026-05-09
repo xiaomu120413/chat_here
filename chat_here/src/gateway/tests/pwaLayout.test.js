@@ -10,6 +10,7 @@ test("HTML declares PWA manifest and mobile viewport", async () => {
   assert.match(html, /id="rail-sessions"/);
   assert.match(html, /id="rail-members"/);
   assert.match(html, /id="rail-self-test"/);
+  assert.match(html, /id="gateway-copy-mobile-btn"/);
   assert.match(html, /data-insert="@codex "/);
   assert.match(html, /data-insert="@copilot "/);
   assert.match(html, /data-insert="@all "/);
