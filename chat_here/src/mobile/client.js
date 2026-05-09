@@ -7,6 +7,7 @@ import {
   getMobileSendDisabledReason,
   getThreadPreview,
 } from "./threadViewModel.js";
+import { isFreshMobileGatewayConfig, withMobileConfigSavedAt } from "./configSecurity.js";
 import { createSanitizedMobileUrl } from "./urlSecurity.js";
 
 const STORAGE_KEY = "chat_here_mobile_gateway";
@@ -417,7 +418,12 @@ function defaultGatewayUrl() {
 
 function readSavedConfig() {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}");
+    const config = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}");
+    if (!isFreshMobileGatewayConfig(config)) {
+      localStorage.removeItem(STORAGE_KEY);
+      return {};
+    }
+    return config;
   } catch {
     return {};
   }
@@ -439,7 +445,7 @@ function sanitizeCurrentUrl() {
 }
 
 function saveConfig(config) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(withMobileConfigSavedAt(config)));
 }
 
 function formatTime(value) {
