@@ -2,7 +2,7 @@ import { startRun } from "../gateway/orchestrator/index.js";
 import { ProviderId } from "../gateway/adapters/config.js";
 import { createTauriOpenAIHealthClient, normalizeHealthResult } from "../gateway/adapters/tauriOpenAIHealth.js";
 import { AuthAgent, createTauriAuthBroker } from "../gateway/auth/tauriAuthBroker.js";
-import { createGatewayApiClient } from "../gateway/http/client.js";
+import { createGatewayApiClient, createGatewayEventStream } from "../gateway/http/client.js";
 import {
   CODEX_MODELS,
   COPILOT_MODELS,
@@ -46,6 +46,8 @@ let healthState = {
 let gatewayState = {
   status: null,
   client: null,
+  stream: null,
+  streamUrl: "",
 };
 
 export function initGatewayController() {
@@ -637,9 +639,12 @@ async function stopGateway() {
 
 function renderGatewayStatus(status) {
   if (!status?.running) {
+    closeGatewayEventStream();
     gatewayState = {
       status: null,
       client: null,
+      stream: null,
+      streamUrl: "",
     };
     elements.gatewayStatusBox.textContent = "Gateway 未启动。\n局域网模式不会自动开启，需要手动点击。";
     return;
@@ -651,7 +656,10 @@ function renderGatewayStatus(status) {
       baseUrl: status.localUrl,
       token: status.token,
     }),
+    stream: gatewayState.stream,
+    streamUrl: gatewayState.streamUrl,
   };
+  openGatewayEventStream(status);
 
   const lines = [
     `状态：运行中 (${status.exposeLan ? "局域网" : "本机"})`,
@@ -678,6 +686,105 @@ function buildMobileEntryUrl(gatewayUrl, token) {
   appUrl.searchParams.set("gateway", gatewayUrl);
   appUrl.searchParams.set("token", token);
   return appUrl.toString();
+}
+
+function openGatewayEventStream(status) {
+  const streamUrl = `${status.localUrl}|${status.token}`;
+  if (gatewayState.stream && gatewayState.streamUrl === streamUrl) {
+    return;
+  }
+
+  closeGatewayEventStream();
+  try {
+    const stream = createGatewayEventStream({
+      baseUrl: status.localUrl,
+      token: status.token,
+    });
+    stream.addEventListener("message.created", handleGatewayMessageCreated);
+    stream.addEventListener("thread.created", () => refreshGatewayBackedSessions());
+    gatewayState.stream = stream;
+    gatewayState.streamUrl = streamUrl;
+  } catch (error) {
+    elements.gatewayStatusBox.textContent = `Gateway 实时监听失败：${getErrorMessage(error)}`;
+  }
+}
+
+function closeGatewayEventStream() {
+  if (gatewayState.stream) {
+    gatewayState.stream.close();
+  }
+}
+
+function handleGatewayMessageCreated(event) {
+  try {
+    const record = JSON.parse(event.data);
+    void syncGatewayThreadToPcSession(record.threadId);
+  } catch {
+    void refreshGatewayBackedSessions();
+  }
+}
+
+function refreshGatewayBackedSessions() {
+  for (const session of sessions) {
+    if (session.gatewayThreadId) {
+      void syncGatewayThreadToPcSession(session.gatewayThreadId);
+    }
+  }
+}
+
+async function syncGatewayThreadToPcSession(threadId) {
+  if (!gatewayState.client || !threadId) {
+    return;
+  }
+  const session = sessions.find((candidate) => candidate.gatewayThreadId === threadId);
+  if (!session) {
+    return;
+  }
+
+  try {
+    const snapshot = await gatewayState.client.getThread(threadId);
+    const incoming = (snapshot.messages ?? [])
+      .filter((message) => !session.gatewayMirroredMessageIds.has(message.id))
+      .map(gatewayMessageToUiMessage);
+    if (!incoming.length) {
+      return;
+    }
+
+    for (const message of incoming) {
+      session.gatewayMirroredMessageIds.add(message.id);
+    }
+    session.messages = [...session.messages, ...incoming];
+    session.baseMessages = [...session.baseMessages, ...incoming];
+    session.preview = incoming.at(-1)?.content ?? session.preview;
+    session.lastActivityAt = incoming.at(-1)?.createdAt ?? session.lastActivityAt;
+    renderApp();
+  } catch (error) {
+    appendGatewayNotice(session, `Gateway 实时同步失败：${getErrorMessage(error)}`);
+  }
+}
+
+function gatewayMessageToUiMessage(message) {
+  const source = mapGatewaySourceToUiSource(message.source);
+  return createUiMessage({
+    id: message.id,
+    source,
+    kind: message.kind,
+    content: message.content,
+    createdAt: message.createdAt,
+  });
+}
+
+function mapGatewaySourceToUiSource(source) {
+  if (source?.type === "agent" && source.id === "codex") {
+    return "codex";
+  }
+  if (source?.type === "agent" && source.id === "copilot") {
+    return "copilot";
+  }
+  if (source?.type === "gateway" || source?.id === "gateway") {
+    return "gateway";
+  }
+  return "me";
 }
 
 async function ensureGatewayThread(session) {
@@ -744,7 +851,7 @@ async function mirrorRunResultToGateway(session, result) {
       continue;
     }
     try {
-      await gatewayState.client.sendMessage(threadId, {
+      const sent = await gatewayState.client.sendMessage(threadId, {
         kind: mapGatewayMessageKind(message),
         source: createGatewayMessageSource(message.source),
         targetAgents: message.target ? [message.target].filter((target) => target !== "user") : [],
@@ -752,6 +859,9 @@ async function mirrorRunResultToGateway(session, result) {
         dispatch: false,
       });
       session.gatewayMirroredMessageIds.add(message.id);
+      if (sent?.message?.id) {
+        session.gatewayMirroredMessageIds.add(sent.message.id);
+      }
     } catch (error) {
       appendGatewayNotice(session, `Gateway 同步 ${message.source} 回复失败：${getErrorMessage(error)}`);
       return;
@@ -775,7 +885,7 @@ async function mirrorSummaryToGateway(session, result) {
   }
 
   try {
-    await gatewayState.client.sendMessage(threadId, {
+    const sent = await gatewayState.client.sendMessage(threadId, {
       kind: "summary",
       source: { type: "gateway", id: "gateway", name: "Gateway" },
       targetAgents: [],
@@ -783,6 +893,9 @@ async function mirrorSummaryToGateway(session, result) {
       dispatch: false,
     });
     session.gatewayMirroredMessageIds.add(key);
+    if (sent?.message?.id) {
+      session.gatewayMirroredMessageIds.add(sent.message.id);
+    }
   } catch (error) {
     appendGatewayNotice(session, `Gateway 同步总结失败：${getErrorMessage(error)}`);
   }
@@ -803,7 +916,7 @@ async function mirrorGatewayMessageToGateway(session, content, kind = "gateway")
   }
 
   try {
-    await gatewayState.client.sendMessage(threadId, {
+    const sent = await gatewayState.client.sendMessage(threadId, {
       kind,
       source: { type: "gateway", id: "gateway", name: "Gateway" },
       targetAgents: [],
@@ -811,6 +924,9 @@ async function mirrorGatewayMessageToGateway(session, content, kind = "gateway")
       dispatch: false,
     });
     session.gatewayMirroredMessageIds.add(key);
+    if (sent?.message?.id) {
+      session.gatewayMirroredMessageIds.add(sent.message.id);
+    }
   } catch {
     // Avoid recursive UI errors when the Gateway error reporter itself fails.
   }
