@@ -61,6 +61,44 @@ test("gateway API client surfaces server errors", async () => {
   }
 });
 
+test("gateway API client passes an abort signal for request timeouts", async () => {
+  let capturedSignal = null;
+  const client = createGatewayApiClient({
+    baseUrl: "http://127.0.0.1:17321",
+    token: TOKEN,
+    timeoutMs: 50,
+    fetchImpl: async (_url, init) => {
+      capturedSignal = init.signal;
+      return {
+        ok: true,
+        async json() {
+          return { threads: [] };
+        },
+      };
+    },
+  });
+
+  await client.listThreads();
+
+  assert.ok(capturedSignal instanceof AbortSignal);
+  assert.equal(capturedSignal.aborted, false);
+});
+
+test("gateway API client normalizes aborts into timeout errors", async () => {
+  const client = createGatewayApiClient({
+    baseUrl: "http://127.0.0.1:17321",
+    token: TOKEN,
+    timeoutMs: 50,
+    fetchImpl: async () => {
+      const error = new Error("aborted");
+      error.name = "AbortError";
+      throw error;
+    },
+  });
+
+  await assert.rejects(() => client.listThreads(), /Gateway request timed out/);
+});
+
 test("gateway event stream appends token as query param", () => {
   const created = [];
   class FakeEventSource {
