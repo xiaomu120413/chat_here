@@ -20,8 +20,10 @@ import {
   scrollToBottom,
   updateProgress,
 } from "./render.js";
+import { restoreSessionState, serializeSessionState } from "./sessionPersistence.js";
 
 const store = createLocalStorageStore();
+const SESSION_STORAGE_KEY = "chat_here_sessions_v1";
 const healthClient = createTauriOpenAIHealthClient();
 const authBroker = createTauriAuthBroker();
 const isTauriRuntime = Boolean(window.__TAURI_INTERNALS__);
@@ -153,8 +155,12 @@ function bindEvents() {
 }
 
 function bootstrapSessions() {
-  sessions = [createSession("Architecture Room")];
-  currentSessionId = sessions[0].id;
+  const restored = restoreSessionState(localStorage.getItem(SESSION_STORAGE_KEY), {
+    members: MEMBERS,
+    createFallbackSession: () => createSession("Architecture Room"),
+  });
+  sessions = restored.sessions;
+  currentSessionId = restored.currentSessionId;
 }
 
 function populateModels() {
@@ -213,6 +219,7 @@ function renderApp() {
   updateProgress(elements.progressSection, session.run);
   renderHistory(elements.historyList, historyRecords, session.activeRunId);
   scrollToBottom(elements.chatMessages);
+  persistSessions();
 }
 
 function buildHeaderMeta(session) {
@@ -321,6 +328,7 @@ function syncCurrentSessionConfig() {
   session.codexModel = elements.modelInput.value;
   session.copilotModel = elements.copilotModelInput.value;
   session.rounds = normalizeRoundValue(elements.roundInput.value);
+  persistSessions();
 }
 
 function normalizeRoundValue(value) {
@@ -853,6 +861,7 @@ async function ensureGatewayThread(session) {
       metadata: { pcSessionId: session.id },
     });
     session.gatewayThreadId = created.thread.id;
+    persistSessions();
     return session.gatewayThreadId;
   } catch (error) {
     appendGatewayNotice(session, `Gateway 同步会话失败：${getErrorMessage(error)}`);
@@ -1040,6 +1049,10 @@ function appendGatewayNotice(session, content) {
     notice,
   ];
   renderApp();
+}
+
+function persistSessions() {
+  localStorage.setItem(SESSION_STORAGE_KEY, serializeSessionState(sessions, currentSessionId));
 }
 
 function setGatewayButtonsDisabled(disabled) {
