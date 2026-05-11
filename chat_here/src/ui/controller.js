@@ -12,6 +12,7 @@ import {
 } from "../gateway/models.js";
 import { createLocalStorageStore } from "../gateway/store/localStorageStore.js";
 import { invoke } from "@tauri-apps/api/core";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   getErrorMessage,
   renderHistory,
@@ -29,6 +30,9 @@ const SESSION_STORAGE_KEY = "chat_here_sessions_v1";
 const healthClient = createTauriOpenAIHealthClient();
 const authBroker = createTauriAuthBroker();
 const isTauriRuntime = Boolean(window.__TAURI_INTERNALS__);
+const appWindow = isTauriRuntime ? getCurrentWindow() : null;
+document.body.classList.toggle("tauri-runtime", isTauriRuntime);
+document.body.classList.toggle("browser-preview-runtime", !isTauriRuntime);
 
 const MEMBERS = Object.freeze([
   { id: "me", name: "Me", role: "发起人", short: "M" },
@@ -152,10 +156,17 @@ function bindEvents() {
   elements.gatewayLanBtn.addEventListener("click", () => startGateway(true));
   elements.gatewayCopyMobileBtn.addEventListener("click", copyMobileEntry);
   elements.gatewayStopBtn.addEventListener("click", stopGateway);
+  bindWindowControls();
   syncRuntimeOnlyControls();
   elements.modelInput.addEventListener("change", syncCurrentSessionConfig);
   elements.copilotModelInput.addEventListener("change", syncCurrentSessionConfig);
   elements.roundInput.addEventListener("change", syncCurrentSessionConfig);
+}
+
+function bindWindowControls() {
+  document.getElementById("window-minimize-btn")?.addEventListener("click", () => appWindow?.minimize());
+  document.getElementById("window-maximize-btn")?.addEventListener("click", () => appWindow?.toggleMaximize());
+  document.getElementById("window-close-btn")?.addEventListener("click", () => appWindow?.close());
 }
 
 function bootstrapSessions() {

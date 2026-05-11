@@ -10,6 +10,14 @@
   </head>
   <body>
     <main class="qq-shell" id="im-app">
+      <div class="desktop-titlebar" data-tauri-drag-region>
+        <div class="desktop-window-brand" data-tauri-drag-region>Chat Here</div>
+        <div class="desktop-window-controls">
+          <button class="desktop-window-btn" id="window-minimize-btn" type="button" aria-label="最小化">−</button>
+          <button class="desktop-window-btn" id="window-maximize-btn" type="button" aria-label="最大化">□</button>
+          <button class="desktop-window-btn close" id="window-close-btn" type="button" aria-label="关闭">×</button>
+        </div>
+      </div>
       <nav class="app-rail">
         <div class="rail-brand">Q</div>
         <button class="rail-icon active" id="rail-sessions" type="button" aria-label="会话列表" title="会话列表">聊</button>

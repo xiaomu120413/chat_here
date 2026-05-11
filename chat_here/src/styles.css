@@ -63,12 +63,77 @@ button:disabled {
 
 .qq-shell {
   display: grid;
-  grid-template-columns: 64px 270px minmax(0, 1fr) minmax(280px, 320px);
+  grid-template-columns: 64px minmax(292px, 320px) minmax(0, 1fr) minmax(280px, 320px);
+  grid-template-rows: minmax(0, 1fr);
   height: 100dvh;
   min-width: 0;
   min-height: 0;
   padding: clamp(8px, 1.3vw, 14px);
   gap: clamp(8px, 1.3vw, 14px);
+}
+
+.desktop-titlebar {
+  grid-column: 1 / -1;
+  display: none;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 30px;
+  user-select: none;
+  color: rgba(23, 27, 44, 0.68);
+}
+
+.tauri-runtime .qq-shell {
+  grid-template-rows: 30px minmax(0, 1fr);
+  padding: 0 clamp(8px, 1.3vw, 14px) clamp(8px, 1.3vw, 14px);
+}
+
+.tauri-runtime .desktop-titlebar {
+  display: flex;
+}
+
+.tauri-runtime .app-rail,
+.tauri-runtime .session-pane,
+.tauri-runtime .thread-pane {
+  grid-row: 2;
+}
+
+.desktop-window-brand {
+  width: 68px;
+  height: 100%;
+  overflow: hidden;
+  color: transparent;
+  font-size: 0;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.desktop-window-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 100%;
+  padding-right: 4px;
+}
+
+.desktop-window-btn {
+  width: 34px;
+  height: 24px;
+  border-radius: 9px;
+  background: transparent;
+  color: rgba(23, 27, 44, 0.7);
+  font-size: 13px;
+  line-height: 1;
+}
+
+.desktop-window-btn:hover {
+  background: rgba(255, 255, 255, 0.62);
+  color: var(--text-main);
+}
+
+.desktop-window-btn.close:hover {
+  background: rgba(255, 84, 112, 0.92);
+  color: #fff;
 }
 
 .mobile-shell {
@@ -619,6 +684,7 @@ button:disabled {
 }
 
 .app-rail {
+  grid-row: 1;
   border-radius: 24px;
   background: var(--rail-bg);
   display: flex;
@@ -685,6 +751,7 @@ button:disabled {
 }
 
 .session-pane {
+  grid-row: 1;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -787,6 +854,11 @@ button:disabled {
   overflow: auto;
 }
 
+.session-list {
+  overflow-x: hidden;
+  padding: 0 2px 2px 0;
+}
+
 .session-item,
 .history-item {
   border-radius: 20px;
@@ -797,10 +869,13 @@ button:disabled {
 }
 
 .session-item {
-  grid-template-columns: 52px minmax(0, 1fr) auto;
+  grid-template-columns: 48px minmax(0, 1fr) 22px;
   align-items: center;
   cursor: pointer;
   transition: transform 140ms ease, background 140ms ease;
+  min-width: 0;
+  overflow: hidden;
+  column-gap: 10px;
 }
 
 .session-item:hover,
@@ -810,7 +885,7 @@ button:disabled {
 
 .session-item.active {
   background: rgba(255, 255, 255, 0.92);
-  transform: translateX(3px);
+  transform: translateX(2px);
 }
 
 .session-avatar,
@@ -855,7 +930,21 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: 8px;
+}
+
+.session-content,
+.session-name-row,
+.session-name,
+.session-preview {
+  min-width: 0;
+}
+
+.session-name,
+.session-preview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .session-name,
@@ -869,15 +958,24 @@ button:disabled {
   font-size: 12px;
 }
 
+.session-time {
+  flex: 0 0 auto;
+  max-width: 48px;
+  overflow: hidden;
+  text-align: right;
+  white-space: nowrap;
+}
+
 .session-delete {
-  width: 28px;
-  height: 28px;
-  border-radius: 12px;
+  width: 22px;
+  height: 22px;
+  border-radius: 11px;
   background: rgba(145, 150, 170, 0.18);
   color: var(--text-soft);
 }
 
 .thread-pane {
+  grid-row: 1;
   position: relative;
   background: rgba(255, 255, 255, 0.34);
   display: flex;
@@ -903,10 +1001,31 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 14px;
+}
+
+.thread-title-wrap {
+  min-width: 0;
+  flex: 1;
 }
 
 .thread-title {
   font-size: 22px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thread-meta {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.thread-actions {
+  flex: 0 0 auto;
 }
 
 .thread-body {
@@ -1213,7 +1332,7 @@ button:disabled {
 
 @media (max-width: 1360px) {
   .qq-shell {
-    grid-template-columns: 60px minmax(220px, 250px) minmax(0, 1fr);
+    grid-template-columns: 60px minmax(286px, 300px) minmax(0, 1fr);
   }
 
   .info-pane {
@@ -1231,7 +1350,7 @@ button:disabled {
 
 @media (max-width: 1100px) {
   .qq-shell {
-    grid-template-columns: 58px minmax(200px, 230px) minmax(0, 1fr);
+    grid-template-columns: 58px minmax(270px, 280px) minmax(0, 1fr);
   }
 
   .session-pane,
@@ -1267,6 +1386,11 @@ button:disabled {
     height: 100dvh;
     min-width: 0;
     padding: 10px;
+  }
+
+  .tauri-runtime .qq-shell {
+    grid-template-rows: 30px minmax(0, 1fr) 64px;
+    padding: 0 10px 10px;
   }
 
   .app-rail {
@@ -1307,6 +1431,14 @@ button:disabled {
     grid-row: 1;
     min-width: 0;
     border-radius: 24px;
+  }
+
+  .tauri-runtime .app-rail {
+    grid-row: 3;
+  }
+
+  .tauri-runtime .thread-pane {
+    grid-row: 2;
   }
 
   .thread-header,
