@@ -30,7 +30,6 @@ const SESSION_STORAGE_KEY = "chat_here_sessions_v1";
 const healthClient = createTauriOpenAIHealthClient();
 const authBroker = createTauriAuthBroker();
 const isTauriRuntime = Boolean(window.__TAURI_INTERNALS__);
-const appWindow = isTauriRuntime ? getCurrentWindow() : null;
 document.body.classList.toggle("tauri-runtime", isTauriRuntime);
 document.body.classList.toggle("browser-preview-runtime", !isTauriRuntime);
 
@@ -164,9 +163,33 @@ function bindEvents() {
 }
 
 function bindWindowControls() {
-  document.getElementById("window-minimize-btn")?.addEventListener("click", () => appWindow?.minimize());
-  document.getElementById("window-maximize-btn")?.addEventListener("click", () => appWindow?.toggleMaximize());
-  document.getElementById("window-close-btn")?.addEventListener("click", () => appWindow?.close());
+  bindWindowControl("window-minimize-btn", (window) => window.minimize());
+  bindWindowControl("window-maximize-btn", (window) => window.toggleMaximize());
+  bindWindowControl("window-close-btn", (window) => window.close());
+}
+
+function bindWindowControl(id, action) {
+  const button = document.getElementById(id);
+  if (!button) {
+    return;
+  }
+
+  button.addEventListener("pointerdown", stopWindowControlEvent);
+  button.addEventListener("dblclick", stopWindowControlEvent);
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!isTauriRuntime) {
+      return;
+    }
+    void action(getCurrentWindow()).catch((error) => {
+      console.error(`Window control ${id} failed`, error);
+    });
+  });
+}
+
+function stopWindowControlEvent(event) {
+  event.stopPropagation();
 }
 
 function bootstrapSessions() {
@@ -395,7 +418,7 @@ async function runSelfTest() {
   session.summary = "正在运行 CLI smoke：Codex / Copilot";
   renderApp();
 
-  elements.selfTestBtn.disabled = true;
+  setSelfTestControlsDisabled(true);
   try {
     const smoke = await invoke("cli_smoke_test");
     const lines = [
@@ -430,7 +453,7 @@ async function runSelfTest() {
     renderApp();
     return;
   } finally {
-    elements.selfTestBtn.disabled = false;
+    setSelfTestControlsDisabled(false);
   }
 
   await runPrompt(
@@ -455,9 +478,10 @@ async function runPrompt(session, prompt, options = {}) {
   }
 
   elements.sendBtn.disabled = true;
-  elements.selfTestBtn.disabled = true;
+  setSelfTestControlsDisabled(true);
   const cancelToken = createCancelToken();
   session.activeCancelToken = cancelToken;
+  session.activeRunId = `pending_${Date.now()}`;
   session.baseMessages = [...session.messages];
   session.summary = options.pendingSummary ?? "讨论已发出，等待成员开始发言。";
   session.preview = options.preview ?? prompt;
@@ -470,8 +494,9 @@ async function runPrompt(session, prompt, options = {}) {
 
   try {
     if (!options.skipGatewayMirror) {
-      await mirrorUserPromptToGateway(session, prompt);
+      await withUiCancellation(mirrorUserPromptToGateway(session, prompt), cancelToken, "Gateway 同步");
     }
+    assertUiNotCancelled(cancelToken, "讨论");
     const result = await startRun(prompt, {
       store,
       maxRounds: session.rounds,
@@ -488,6 +513,12 @@ async function runPrompt(session, prompt, options = {}) {
     syncSessionFromSnapshot(session, result, {
       suppressUserPrompt: options.suppressUserPrompt ? prompt : "",
     });
+    if (result.error || result.run?.status === "failed") {
+      session.summary = `失败：${result.error?.message ?? result.run?.error ?? "讨论运行失败"}`;
+      await mirrorGatewayMessageToGateway(session, session.summary, "error");
+      await refreshHistory();
+      return;
+    }
     await mirrorRunResultToGateway(session, result);
     session.summary = result.decision
       ? [result.decision.summary, result.decision.rationale].filter(Boolean).join("\n\n")
@@ -516,7 +547,7 @@ async function runPrompt(session, prompt, options = {}) {
     session.activeCancelToken = null;
     session.baseMessages = [...session.messages];
     elements.sendBtn.disabled = false;
-    elements.selfTestBtn.disabled = false;
+    setSelfTestControlsDisabled(false);
     renderApp();
   }
 }
@@ -529,6 +560,27 @@ function cancelCurrentRun() {
   session.activeCancelToken.cancel("user stopped from desktop");
   session.summary = "正在停止当前讨论。已发出的底层 CLI 调用可能还会短暂收尾，但 UI 会尽快恢复。";
   renderApp();
+}
+
+function withUiCancellation(promise, cancelToken, label) {
+  if (!cancelToken) {
+    return promise;
+  }
+
+  let unsubscribe = () => {};
+  const cancellation = new Promise((_, reject) => {
+    unsubscribe = cancelToken.subscribe((reason) => {
+      reject(new Error(`${label}已取消：${reason || "cancelled"}`));
+    });
+  });
+
+  return Promise.race([promise, cancellation]).finally(() => unsubscribe());
+}
+
+function assertUiNotCancelled(cancelToken, label) {
+  if (cancelToken?.cancelled) {
+    throw new Error(`${label}已取消：${cancelToken.reason || "cancelled"}`);
+  }
 }
 
 function ensureDiagnosticSession() {
@@ -1092,6 +1144,11 @@ function setGatewayButtonsDisabled(disabled) {
   elements.gatewayLanBtn.disabled = disabled;
   elements.gatewayStopBtn.disabled = disabled;
   elements.gatewayCopyMobileBtn.disabled = disabled || !elements.gatewayCopyMobileBtn.dataset.mobileEntryUrl;
+}
+
+function setSelfTestControlsDisabled(disabled) {
+  elements.selfTestBtn.disabled = disabled;
+  elements.railSelfTest.disabled = disabled;
 }
 
 function syncRuntimeOnlyControls() {
